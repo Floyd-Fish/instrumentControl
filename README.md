@@ -165,7 +165,7 @@ python mcp_instruments/config_cli.py clear sds            # 删条目 → 回落
 
 `skills/<name>/SKILL.md` 是**唯一权威源**，不再到处维护副本。历史上
 `mcp_instruments/SKILL.md` 与 `~/.agents/skills/instrument-mcp/SKILL.md` 是双副本、
-靠人工同步（本仓在 dg832-control 上踩过同一个坑），已在本版收敛为单一源。
+靠人工同步，已在本版收敛为单一源。
 
 ```bash
 python scripts/install_skills.py --check      # 只报告：已链接 / 是旧副本 / 未安装

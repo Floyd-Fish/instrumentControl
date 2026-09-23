@@ -4,7 +4,7 @@
 不是某个设备的专属脚本——凡走 USB-TMC 的仪器（DG832/DH1766/USB 示波器…）都适用。
 MCP 侧对应工具 `usb_reset`（需 confirm=True）。
 
-背景（真机经验，见 skill `dg832-control` 排障段）：USB-TMC 仪器偶发"设备在但会话卡死"——
+背景（真机经验）：USB-TMC 仪器偶发"设备在但会话卡死"——
 `*IDN?` 超时 / `VI_ERROR_TMO` / `VI_ERROR_SYSTEM_ERROR`，拔插 USB 能恢复，但拔插需要人到现场。
 **等价且更省事的办法：重启该 USB 设备节点（PnP restart）**——USB 重新枚举，设备固件不重启、
 设定不丢，通常几秒内即恢复。2026-09-15 DG832 实测过一次 `VI_ERROR_SYSTEM_ERROR`（重连即恢复），

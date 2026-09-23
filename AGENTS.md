@@ -304,15 +304,6 @@ CH2 的 −11.99V 是跟踪跟随，不是故障；同时任何远程会话都�
   新增 `sds_get_waveform(ch, points=50000, save_csv)`——返回摘要 + 可选 CSV 路径
   （不返回完整数组防上下文爆炸），FFT 交叉验证时间轴可信。
 - waveform_matrix 遗留：带偏置信号（OFST≠0）的细调精度（居中残差×细调交互）
-- ~~dg832-control skill/scripts 双副本需人工同步~~ **已解决（2026-09-15）**：
-  DG832 并入本仓——库/手册/笔记在 `dg832_control/`（驱动迁入时逐字节未改，md5 `d1e33622…`）、
-  MCP 并入统一服务器（`dg_*` 12 工具）、skill 只留 playbook（脚本副本已删，见
-  `~/.agents/skills/dg832-control/scripts/RETIRED.md`）；旧位置 `D:\ChatWorkspace\DG832使用\`
-  已置退役说明。**不再有嵌套独立仓库**，本仓一把 git 管到底。
-- ~~旧嵌套目录 `dg832-control/`（连字符）残留~~ **已删除（2026-09-15）**：内容早已
-  并入 `dg832_control/`（下划线），其 `dg832.py` 的 LAN fallback 亦被 `common/resolver.py`
-  取代；该目录属独立 git 仓库、主仓从未追踪，删除前仅剩 1 个未推提交（f548a92，
-  LAN fallback，功能已被取代）。
 - ~~设备序列号/现场地址散落在文档与脚本里~~ **已收敛（2026-09-15）**：真实序列号
   统一移入 `docs/DEVICE_FACTS.local.md`（本机专有、已 gitignore），仓库内一律用
   `<serial>`/占位符；`TEST_DATA/` 整体不入库（体积 + 含序列号与网内 IP）。

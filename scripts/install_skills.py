@@ -4,8 +4,7 @@
 
 背景：`skills/instrument-mcp/SKILL.md` 是**唯一权威源**。历史上它同时存在于
 仓库内（`mcp_instruments/SKILL.md`）与用户级 skill 目录
-（`~/.agents/skills/instrument-mcp/`）两处，靠人工同步 —— 本仓已在
-dg832-control 上踩过同一个坑（见 AGENTS.md「双副本需人工同步」）。本脚本把
+（`~/.agents/skills/instrument-mcp/`）两处，靠人工同步、容易漂移。本脚本把
 "安装"变成一条命令，并默认用**目录链接**安装，从根本上消除漂移。
 
 用法：

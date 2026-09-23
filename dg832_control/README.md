@@ -9,22 +9,12 @@
 | `docs/DG832使用笔记.md` | 使用笔记（型号对照、快速上手、踩坑记录） |
 | `docs/00_快速指南.txt`、`01_用户手册.txt`、`02_编程手册.txt` | 原厂手册文本（**命令出处的审计参照物**：`02_编程手册.txt`） |
 
-## 迁移说明（为什么只有这一份）
+## 迁移说明
 
-合并前同一份 `dg832.py` 存在**三处副本**（逐字节相同，md5 `d1e33622d2a8…`）：
-
-1. `D:\ChatWorkspace\DG832使用\dg832.py`
-2. `D:\ChatWorkspace\DG832使用\skill\dg832-control\scripts\dg832.py`
-3. `C:\Users\dell\.agents\skills\dg832-control\scripts\dg832.py`
-
-三份 + 两个 MCP 包装（`mcp_dg832/server.py` 与 skill 内的 `mcp_server.py`）正是
-`AGENTS.md` 待办里"skill/scripts 双副本需人工同步"的来源。现统一为：
-
-- **库**：本目录 `dg832.py`；
-- **MCP**：并入 `mcp_instruments/server.py` 的 `dg_*` 工具（不再单独跑 `instrument` 服务器）；
-- **skill**：`~/.agents/skills/dg832-control/SKILL.md` 改为指向本仓（不再带脚本副本）；
-- **旧位置**：`D:\ChatWorkspace\DG832使用\` 的 `mcp_dg832/`、`skill/`、以及 skill 内的
-  `scripts/` 均已退役删除（用户 2026-09-15 指示"这个就不再单独维护"）。
+2026-09-15 合并前，同一份 `dg832.py` 有三处**逐字节相同**的副本（散落在旧工作区与
+两个 skill 目录），外加两个 MCP 包装（`mcp_dg832/server.py` 与 skill 内的
+`mcp_server.py`）。现统一为：**库** = 本目录 `dg832.py`；**MCP** =
+`mcp_instruments/server.py` 的 `dg_*` 工具。旧副本、旧 skill 与旧 MCP 包装均已删除。
 
 ## 与仓库其它库的差异（有意保留）
 

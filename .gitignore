@@ -1,9 +1,6 @@
 __pycache__/
 *.pyc
 
-# 注：DG832 于 2026-09-15 并入本仓（dg832_control/，原 dg832-control 嵌套仓库已退役）
-#     —— 库/手册/笔记进本仓，MCP 并入统一服务器，skill 只留 playbook。
-
 # 运行期缓存：现写在用户级缓存目录 %LOCALAPPDATA%\instrumentControl\
 # （旧位置在包目录内，仅兼容读一次后删除；此规则保留作兜底）
 .last_good_resource.json

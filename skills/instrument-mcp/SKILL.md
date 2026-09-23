@@ -5,8 +5,8 @@ description: instrument MCP 服务器使用指引 — 七台仪器（SDS 示波�
 
 # instrument MCP 使用指引
 
-MCP server：`mcp_instruments/server.py`（65 工具 = 61 专用 + 3 通用护栏 + 1 故障兜底，八台设备）。
-本文是 AI 选择工具/参数时的决策依据。DG832 的详细 SOP/踩坑见 skill `dg832-control`。
+MCP server：`mcp_instruments/server.py`（68 工具 = 64 设备专用 + 3 通用护栏 + 1 故障兜底，八台设备）。
+本文是 AI 选择工具/参数时的决策依据。
 
 ## 一、工具选择决策树
 
@@ -484,17 +484,13 @@ MCP 进程通常已带管理员（可直接用）；若工具报"需要管理员
 ### ⚠ 串行化只在**单个 MCP 进程内**成立（多实例不互斥）
 
 设备锁与单 worker 执行器都是**进程内**的：同一台机器上若跑着多个 MCP 实例
-（不同客户端各起一个、或退役路径的转发 shim 又起一份），它们之间**不互斥**——
-两个客户端可以同时对同一台仪器下发命令，`device_busy` 拦不住。实测本机曾同时存在
-**14 个** instrument 相关实例（2 个统一服务器 + 11 个 shim 转发 + 1 个跑退役代码的旧进程）。
+（不同客户端各起一个），它们之间**不互斥**——两个客户端可以同时对同一台仪器下发
+命令，`device_busy` 拦不住。本机实测曾同时存在多个 instrument 相关实例。
 
 - 纪律：**同一台仪器同一时间只由一个客户端操作**；交接前先收尾（关输出/恢复设定/
   归还面板控制权）。
 - 排查（PowerShell）：
-  `Get-CimInstance Win32_Process | Where-Object { $_.CommandLine -match 'instrumentControl|dg832-control' } | Select ProcessId,CreationDate,CommandLine`
-- 退役路径 `~/.agents/skills/dg832-control/scripts/mcp_server.py` 现在只是**转发 shim**；
-  启动时间早于 2026-09-15 13:06 的进程跑的是**旧代码**（工具名 `instrument_*`、
-  无 description），应杀掉让其客户端重连。
+  `Get-CimInstance Win32_Process | Where-Object { $_.CommandLine -match 'instrumentControl' } | Select ProcessId,CreationDate,CommandLine`
 
 ### 超时/卡死语义（所有工具一致）
 
