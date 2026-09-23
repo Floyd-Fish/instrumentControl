@@ -752,7 +752,7 @@ def instr_discover(cidr: str | None = None) -> str:
         # 初始化竞争）→ 整轮 discover 间歇性失败；identify_all 统一收口该问题。
         idns = identify_all(non_serial, timeout_ms=2000, workers=4)
         visa = [make_entry(r, idns.get(r)) for r in non_serial]
-        for entry in probe_serials_isolated(serial_res, timeout_ms=1500):
+        for entry in probe_serials_isolated(serial_res, timeout_ms=500):
             idn = entry.get("idn")
             item = {"resource": entry["resource"], "kind": "serial",
                     "online": bool(idn) if idn else (None if entry.get("note") else False)}
@@ -779,37 +779,60 @@ def instr_discover(cidr: str | None = None) -> str:
                        "本机没有 RFC1918 私网接口地址；可显式传 cidr 指定网段。"
                 warn = f"LAN 部分跳过（未得到可扫网段）。{hint}"
             else:
-                # ① 所有网段的地址**合并后一次性并行预筛**（逐网段串行要 4×4.9s；
-                #    合并后 ~5s）；② 再按网段分组判 fake-IP；③ 存活地址统一 VISA 识别。
-                per_seg_addrs = {
-                    seg: [str(h) for h in ipaddress.ip_network(seg, strict=False).hosts()]
-                    for seg in segs
-                }
-                all_addrs = [a for addrs in per_seg_addrs.values() for a in addrs]
-                # asyncio 并发 + 限流预筛（比线程池逐地址 4 端口串行快 ~7 倍；
-                # 限流是必需的——不限并发会假阴性漏检，见 probe_alive_many 说明）
-                open_ports = probe_open_ports(all_addrs)
-                alive_all = [a for a, ports in open_ports.items() if ports]
-                alive_set = set(alive_all)
-                candidates: list[str] = []
-                for seg, addrs in per_seg_addrs.items():
-                    alive = [a for a in addrs if a in alive_set]
-                    # 代理 fake-IP 模式会对任意 IP 立即 SYN-ACK → 全部误报 alive →
-                    # 后续 VISA open 逐个挂起拖死线程池（实测 254 全 alive 卡死 5min+）
-                    if len(alive) > 64:
-                        w = (f"网段 {seg} 探测到 {len(alive)}/{len(addrs)} 地址端口全开——"
-                             "疑似代理/VPN fake-IP 干扰，该网段结果已丢弃。"
-                             "请把内网网段加入代理直连（bypass），或用 resource 直连。")
-                        warn = f"{warn} {w}" if warn else w
+                # **分两轮扫**：窄段（/24 及更窄）先合并扫，命中任何仪器就停；只有窄段
+                # 一无所获时才放宽到宽网段（如 ZeroTier 的 /16），且跳过已扫过的地址。
+                #
+                # 为什么不是"合并所有网段一次预筛"（2026-09-23 实测改回）：本机
+                # ZeroTier 的 172.29.0.0/16 一段就 65534 个地址、预筛 **168.0s** 且
+                # 存活 0；而三个 /24 合计仅 **2.0s**，仪器（SDS/SDG/DH1766）全在
+                # 192.168.31.0/24。原实现为省"逐段串行"的调度开销把全部网段**合并**成
+                # 一次预筛，结果把 /16 也吞了进来 → 整轮 190.2s（其中 87% 是这一段）。
+                # `local_scan_segments()` 本来就按"由窄到宽"排序，这里照它的分组走。
+                #
+                # 注意**不能**改成"跳过虚拟网卡网段"：本机 10.165.75.0/24 也是 ZeroTier，
+                # 却有设备响应；远程实验台完全可能挂在 VPN 网段里。宁可多扫一轮，
+                # 不可静默漏检（与本文件"真实掩码"那条注释同一个教训）。
+                narrow = [s for s in segs
+                          if ipaddress.ip_network(s, strict=False).prefixlen >= 24]
+                wide = [s for s in segs
+                        if ipaddress.ip_network(s, strict=False).prefixlen < 24]
+                scanned: set[str] = set()
+                for group in (narrow, wide):
+                    if not group or lan:
+                        continue      # 窄段已命中仪器 → 不再付宽网段的代价
+                    per_seg_addrs = {
+                        seg: [a for a in (str(h) for h in
+                                          ipaddress.ip_network(seg, strict=False).hosts())
+                              if a not in scanned]
+                        for seg in group
+                    }
+                    group_addrs = [a for addrs in per_seg_addrs.values() for a in addrs]
+                    if not group_addrs:
                         continue
-                    candidates.extend(alive)
-                if candidates:
-                    # 共享单个 RM（并发各自建 RM 会随机 VI_ERROR_INV_OBJECT，
-                    # 且异常从 rm.close() 抛出会冲垮整轮扫描——见 identify_lan_all）
-                    for r in identify_lan_all(candidates, timeout_ms=1500,
-                                              open_ports=open_ports).values():
-                        if r:
-                            lan[r[0]] = r[1]
+                    # asyncio 并发 + 限流预筛（比线程池逐地址 4 端口串行快 ~7 倍；
+                    # 限流是必需的——不限并发会假阴性漏检，见 probe_alive_many 说明）
+                    open_ports = probe_open_ports(group_addrs)
+                    alive_set = {a for a, ports in open_ports.items() if ports}
+                    candidates: list[str] = []
+                    for seg, addrs in per_seg_addrs.items():
+                        alive = [a for a in addrs if a in alive_set]
+                        # 代理 fake-IP 模式会对任意 IP 立即 SYN-ACK → 全部误报 alive →
+                        # 后续 VISA open 逐个挂起拖死线程池（实测 254 全 alive 卡死 5min+）
+                        if len(alive) > 64:
+                            w = (f"网段 {seg} 探测到 {len(alive)}/{len(addrs)} 地址端口全开——"
+                                 "疑似代理/VPN fake-IP 干扰，该网段结果已丢弃。"
+                                 "请把内网网段加入代理直连（bypass），或用 resource 直连。")
+                            warn = f"{warn} {w}" if warn else w
+                            continue
+                        candidates.extend(alive)
+                    scanned |= set(group_addrs)
+                    if candidates:
+                        # 共享单个 RM（并发各自建 RM 会随机 VI_ERROR_INV_OBJECT，
+                        # 且异常从 rm.close() 抛出会冲垮整轮扫描——见 identify_lan_all）
+                        for r in identify_lan_all(candidates, timeout_ms=1500,
+                                                  open_ports=open_ports).values():
+                            if r:
+                                lan[r[0]] = r[1]
         except Exception as e:
             w = f"LAN 扫描异常降级（VISA 结果不受影响）: {type(e).__name__}: {e}"
             warn = f"{warn} {w}" if warn else w

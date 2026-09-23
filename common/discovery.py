@@ -44,9 +44,16 @@ PROBE_ALIVE_CONCURRENCY = 256
 PROBE_CHUNK = 2048
 
 # 串口探测挂起硬超时（驱动层 open 可能不受 open_timeout 约束）。
-# 实测（9 口）：并发 8 会让子进程互相争抢串口资源、多数误报超时；并发 4 正常，
-# 全量探测约 15s 完成。
-SERIAL_PROBE_TIMEOUT_S = 8.0
+# 实测（9 口）：并发 8 会让子进程互相争抢串口资源、多数误报超时；并发 4 正常。
+#
+# 取值依据（2026-09-23 由 8.0 收紧到 2.0）：这个上限只该覆盖"子进程正常走完一趟"
+# 的开销 —— 解释器启动 + pyvisa import + open + `*IDN?` query，实测正常口约 1.4s。
+# 真正留给"设备响应"的时间很少：`*IDN?` 响应最长约 100 字节，按**最慢 4800 baud**
+# 也只有 100×10/4800 ≈ 0.21s（见 `_SERIAL_PROBE_SCRIPT` 的读超时）。
+# 旧值 8.0s 是为"驱动挂起"留的，但挂起口是靠子进程 kill 收场的，并不靠这个上限
+# 变成成功——8s 只是让每个挂起口白等 8s：本机 5 个挂起口 × 8s ÷ 4 workers ≈ 10s
+# （2026-09-23 实测串口段 16.6s，其中绝大部分就是这笔空等）。
+SERIAL_PROBE_TIMEOUT_S = 2.0
 
 # 本进程内探测挂起的串口：后续发现跳过，避免每轮重复空等（子进程隔离已保证
 # 不会污染本进程，这里纯粹是速度优化）。显式重新发现用 forget_hanging_ports() 清空。
@@ -75,7 +82,7 @@ out = {"resource": res, "idn": None, "note": None}
 rm = None
 try:
     rm = pyvisa.ResourceManager()
-    inst = rm.open_resource(res, open_timeout=2000)
+    inst = rm.open_resource(res, open_timeout=1000)
     inst.timeout = timeout_ms
     inst.write_termination = "\n"
     inst.read_termination = "\n"
@@ -102,7 +109,7 @@ print(json.dumps(out, ensure_ascii=False))
 '''
 
 
-def probe_serial_isolated(resource: str, timeout_ms: int = 1500,
+def probe_serial_isolated(resource: str, timeout_ms: int = 500,
                           hard_timeout_s: float = SERIAL_PROBE_TIMEOUT_S) -> dict:
     """在**子进程**里探测一个串口，超时即杀。返回 {resource,idn,note}。
 
@@ -130,7 +137,7 @@ def probe_serial_isolated(resource: str, timeout_ms: int = 1500,
     return {"resource": resource, "idn": None, "note": "子进程无有效输出"}
 
 
-def probe_serials_isolated(resources: list[str], timeout_ms: int = 1500,
+def probe_serials_isolated(resources: list[str], timeout_ms: int = 500,
                            hard_timeout_s: float = SERIAL_PROBE_TIMEOUT_S,
                            workers: int = 4) -> list[dict]:
     """并行探测多个串口（每个一口子进程），保持入参顺序返回。
