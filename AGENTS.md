@@ -329,3 +329,25 @@ CH2 的 −11.99V 是跟踪跟随，不是故障；同时任何远程会话都�
   修法：改用**保证不可写**的路径（如临时目录下先建一个同名文件、再把锁目录指到它的子路径），
   不要依赖"某个盘符不存在"。在修好之前，跑
   `TEST_SCRIPTS/common/regression_offline.ps1` 会稳定看到这 1 项 FAIL，其余套件应全绿。
+- **架构评审结论（2026-09-23，与 GPT 两轮讨论；档案 `docs/gpt_qa/20260923-skill-dist-arch.md`）**：
+  采纳的改进顺序 ——
+  ① **工具可见集 147 → 46**：仪器类工具不再全局注册，改按项目/会话预设挂载。评审认为
+     "候选集过载"的杠杆大于"单条 description 太长"，与本仓实测（窄接口工具调用率 100%
+     vs 宽接口约 25%）一致；**需配套一个低成本的能力发现/切换机制**，避免 preset 切太窄
+     导致模型发现不了它需要的工具。
+  ② **参数域交给 schema**：改用 Pydantic `Literal`/`Enum`（或 `Annotated[str, Field(...)]`）。
+     当前参数 schema 只有 title/type，长枚举移进 skill 后接口退化成"无约束字符串"，会诱发
+     幻觉参数。评审给的选择序：**schema Enum > description 列值 > `list_*` 运行时查询**；
+     判据是调用频率 / 枚举稳定性 / 规模 / **错值代价**（错值会触发真实仪器动作时必须用 Enum）。
+  ③ **工具 MSIC manifest + 规范句型 lint**：`Use when:` / `Do not use for:` / `Requires:` /
+     `Values:` / `Returns:` / `See skill:`；机械查"契约完整性"，人工只审前两句（路由边界）。
+  ④ **confusion set 静态回归**：把语义近邻工具分组并声明区分轴，断言组内每个工具至少有一个
+     唯一判别项且 description 里真有对应信息（替代跑 LLM 的 routing 回归）。
+  ⑤ **skill 两层化**：`SKILL.md`（能力地图 + 全局契约 + 高频路径 + **一跳索引**）+
+     `references/*.md`，最多两层；判据＝"删掉这段后，模型还能否决定直接调用还是读哪个唯一的
+     reference"。
+  另两项与本仓现有实现直接相关：**link 生命周期要显式声明**（link=开发绑定 / copy=部署快照），
+  copy 侧补 provenance，以便 `--check` 区分 OUTDATED / LOCALLY_MODIFIED / WRONG_SOURCE /
+  BROKEN_LINK，并安全回收"仓库删除 skill 后遗留的孤儿链接"（当前有意不清理，见
+  `verify_install_skills_uninstall.py` §7）；以及 **57 原子核对只证明文本守恒、不证明
+  工具路由未退化**，需按 ④ 补行为侧的检查。

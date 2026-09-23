@@ -102,6 +102,23 @@ def make_link(link: Path, target: Path) -> None:
         os.symlink(target, link, target_is_directory=True)
 
 
+def remove_link(p: Path) -> None:
+    """删除一个**目录链接**（junction 或 symlink），绝不触碰它指向的目标。
+
+    刻意*不*用 `Path.is_symlink()` 判断：2026-09-23 实测，Windows junction 在
+    CPython 上 `Path.is_symlink()` 与 `os.path.islink()` **都返回 False**，只有
+    `st_file_attributes` 带 reparse 位才认得出来（见
+    `TEST_SCRIPTS/common/verify_install_skills_uninstall.py` §6 的 [INFO] 行）。
+    这里先用 `os.rmdir`（对目录链接只摘链接本身、不递归），失败再退回 `unlink`
+    （真 symlink）—— 这条路径不依赖"哪个 API 认 junction"的版本假设，判错一次
+    的代价是递归删掉源目录，所以宁可写得笨。
+    """
+    try:
+        os.rmdir(p)
+    except (NotADirectoryError, FileNotFoundError):
+        p.unlink()
+
+
 def backup(dst: Path, stamp: str) -> Path:
     BACKUP_ROOT.mkdir(parents=True, exist_ok=True)
     out = BACKUP_ROOT / f"skill_backup_{dst.name}_{stamp}"
@@ -133,7 +150,7 @@ def install_one(name: str, src: Path, root: Path, mode: str, force: bool,
 
     if do_uninstall:
         if st == "linked":
-            os.rmdir(dst) if not dst.is_symlink() else dst.unlink()
+            remove_link(dst)
             return "已卸载（链接移除）"
         if st == "same":
             shutil.rmtree(dst)
@@ -156,7 +173,7 @@ def install_one(name: str, src: Path, root: Path, mode: str, force: bool,
             return f"拒绝：{desc}（--force 可覆盖，会先备份）"
         bak = backup(dst, stamp)
         if is_reparse_point(dst):
-            os.rmdir(dst) if not dst.is_symlink() else dst.unlink()
+            remove_link(dst)
         else:
             shutil.rmtree(dst)
         _place(dst, src, mode)

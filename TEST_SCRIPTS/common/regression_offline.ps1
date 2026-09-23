@@ -35,6 +35,7 @@ $suites = [ordered]@{
   'verify_rigol_semantics'    = 'TEST_SCRIPTS/common/verify_rigol_scope_semantics.py'
   'verify_mcp_tools_meta'     = 'TEST_SCRIPTS/common/verify_mcp_tools_meta.py'
   'verify_docstring_coverage' = 'TEST_SCRIPTS/common/verify_docstring_trim_coverage_20260923.py'
+  'install_skills_safety'     = 'TEST_SCRIPTS/common/verify_install_skills_uninstall.py'
   'k3458a_offline'            = 'TEST_SCRIPTS/ks3458a/verify_3458a_offline.py'
   'k3458a_mcp_tools'          = 'TEST_SCRIPTS/ks3458a/verify_mcp_ks3458a_tools.py'
   'k3458a_worker_isolation'   = 'TEST_SCRIPTS/ks3458a/verify_worker_isolation.py'
