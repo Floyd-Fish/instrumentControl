@@ -1833,9 +1833,11 @@ def ks3458a_unstick(confirm: bool = False, resource: str | None = None) -> str:
     `END ALWAYS`/`INBUF ON` → 读 `ID?`。
 
     用于"表能听但一直吐数"（free-run）或全部调用超时、普通 Device Clear 停不下来时。
-    ⚠ **对 Talk Only 无效**：表根本不听命令，IFC/RESET 都送不进去——那一态**只能面板**
-    （`Address` → `9` → `Enter`，或按 Reset 键）。先看/问面板 `TALK` 指示灯并用
-    `preflight --id` 区分两种成因，**别反复试本工具**。
+
+    ⚠ **对 Talk Only 模式的有效性待验证**：手册只给面板处置（`Address` → `9` → `Enter`
+    或按 Reset 键），原理上表只听不讲时 IFC/RESET 送不进去；但 2026-09-23 那次"拔插
+    适配器"与"面板按键"同时做过、**成因未能分离**，不能断言远程一定无效。先看/问面板
+    `TALK` 指示灯并用 `preflight --id` 分流，两条路都要试，**别只试一条**。
 
     ⚠ **破坏性**：`RESET` 回到**开机测量配置**（档位/NPLC/功能/触发）→ 必须
     confirm=True。返回体含 `idn`（救回来是 `HP3458A`）与一次电压读数。

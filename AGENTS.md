@@ -214,6 +214,10 @@ AI/Agent 操作仪器必须遵守以下规范。
 - MCP 服务器：`mcp_instruments/server.py`（68 工具 = 64 设备专用 + 3 通用护栏 + 1 故障兜底
   instr_discover/instr_query/instr_write/usb_reset——新设备零代码接入；zcode 用户级 config 已注册
   `instruments`；工具选择/参数语义/安全门见 skill `instrument-mcp`）
+- **skill 的权威源在仓库 `skills/<name>/SKILL.md`**（如 `skills/instrument-mcp/SKILL.md`）：
+  **不要**在 `~/.agents/skills/` 下另存一份副本——那里是 `scripts/install_skills.py`
+  建的分发链接（junction），改哪边都是同一份文件。安装/检查/卸载用该脚本
+  （默认装到 `~/.agents/skills`；`--check` 只报告，`--copy` 复制，`--uninstall` 卸载）。
 
 ## 四、当前设备与地址解析
 
@@ -322,3 +326,9 @@ CH2 的 −11.99V 是跟踪跟随，不是故障；同时任何远程会话都�
 - 串口探测**子进程隔离**：本进程线程探测会留下卡死线程，导致后续任何 VISA 调用打死
   服务器（2026-09-15 实测）。另：非串口批量识别须**共享单个 ResourceManager**——
   多线程各建 RM 会随机 `VI_ERROR_INV_OBJECT`（`common.discovery.identify_all`）。
+- **`ks3458a_unstick` 对 Talk Only 的有效性待验证**（2026-09-23）：手册 p.159 只给面板
+  处置（按 `Reset` 键 / 指定 31 以外的地址），原理上表"只听不讲"时 `IFC`/`RESET` 送不
+  进去；但当日"重新拔插 82357B"与"面板按键"两个动作同时做过、**成因未能分离**，
+  不能据此断言远程一定无效。下次遇到"每条命令都回一个电压读数"时，**分别**验证
+  两条路径（面板 vs 远程 `ks3458a_unstick`）并把结果记入 `docs/TEST_RECORDS.md`，
+  再据以定稿 docstring 与 skill。

@@ -60,14 +60,18 @@ MCP 注册（示例，路径按需替换）：
 ```
 
 > Windows 下必须用 python **全路径**（WindowsApps 别名的 python 在部分客户端 spawn 时失败）。
-> AI 侧的使用指引见 skill `instrument-mcp`（工具选择决策树/参数语义/安全门/工作流）。
+> AI 侧的使用指引见 skill `instrument-mcp`（工具选择决策树/参数语义/安全门/工作流），
+> 权威源在 `skills/instrument-mcp/SKILL.md`，用 `python scripts/install_skills.py`
+> 分发到 AI 工具的 skill 根（见文末「Skill 分发」）。
 
 ## 目录结构
 
 | 目录 | 说明 |
 |---|---|
 | `common/` | VISA 客户端 `VisaClient` + 统一发现 `find_device` + **地址解析 `resolve`**（`resolver.py`，不写死 IP） |
-| `mcp_instruments/` | MCP 服务器（`server.py`）+ 工具清单（`README.md`）+ AI 使用指引（`SKILL.md`） |
+| `mcp_instruments/` | MCP 服务器（`server.py`）+ 工具清单（`README.md`） |
+| `skills/` | **AI skill 的权威源**（`skills/<name>/SKILL.md`），由 `scripts/` 分发到各 AI 工具的 skill 根 |
+| `scripts/` | 部署脚本（`install_skills.py`：skill 安装/检查/卸载） |
 | `dh1766_control/` | 电源库（可 pip 安装；手册提取/命令速查/经验总结在 `docs/`） |
 | `dho_control/`、`sds_control/`、`sdg_control/`、`keysight_3446x/`、`emoe_control/` | 各设备库 + 手册提取 |
 | `TEST_SCRIPTS/` | 实测/验证脚本，按设备分目录 |
@@ -149,10 +153,30 @@ python mcp_instruments/config_cli.py clear sds            # 删条目 → 回落
 | 文档 | 内容 |
 |---|---|
 | `AGENTS.md` | **Agent 工作规范（铁律/安全红线/排查流程）——操作仪器前必读** |
-| `mcp_instruments/SKILL.md` | MCP 使用指引：工具选择决策树、参数语义、安全门、典型工作流 |
+| `skills/instrument-mcp/SKILL.md` | **MCP 使用指引（权威源）**：工具选择决策树、参数语义、安全门、典型工作流；由 `scripts/install_skills.py` 分发到 `~/.agents/skills/` |
 | `mcp_instruments/README.md` | MCP 工具清单与安全约定 |
 | `docs/AI_OPERATION_GUIDE.md` | AI 操作手册：各库 API、固件特性、闭环范例 |
 | `docs/TEST_RECORDS.md` | **历轮实测记录（时间线）** |
 | `docs/ip_hardcode_audit_20260913.md` | 仪器地址硬编码专项审计（结论：地址一律走解析层，勿写死） |
 | `docs/command_audit_20260823.md` | SCPI 命令审计报告（零猜测命令结论） |
 | `dh1766_control/docs/EXPERIENCE.md` | DH1766 时序/固件差异/上电过渡态等实测经验 |
+
+## Skill 分发（仓库为源，安装到 AI 工具）
+
+`skills/<name>/SKILL.md` 是**唯一权威源**，不再到处维护副本。历史上
+`mcp_instruments/SKILL.md` 与 `~/.agents/skills/instrument-mcp/SKILL.md` 是双副本、
+靠人工同步（本仓在 dg832-control 上踩过同一个坑），已在本版收敛为单一源。
+
+```bash
+python scripts/install_skills.py --check      # 只报告：已链接 / 是旧副本 / 未安装
+python scripts/install_skills.py              # 安装（默认建目录链接，改仓库即生效）
+python scripts/install_skills.py --copy       # 复制安装（需要独立副本时）
+python scripts/install_skills.py --uninstall  # 卸载（只动指向本仓的链接）
+```
+
+- **默认目标根** `~/.agents/skills`（DSH / Codex / ZCode 共享的通用 skill 根）；
+  用 `--root <dir>` 指定其它根，可重复。
+- **默认建目录链接**（Windows junction）而非复制：仓库改完**不需重装**即生效，
+  从根上消除"两份内容不一致"；DSH 的 skill watcher 默认跟随符号链接，热更新正常。
+- 目标已存在且内容与源不一致时**拒绝覆盖**（保护本地修改）；`--force` 才覆盖，
+  且会先完整备份到 `TEST_DATA/common/skill_backup_<name>_<时间戳>/`。

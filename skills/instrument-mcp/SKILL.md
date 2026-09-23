@@ -84,9 +84,10 @@ MCP server：`mcp_instruments/server.py`（65 工具 = 61 专用 + 3 通用护�
          但那会一并回到开机测量配置）。
       ② 若 `TALK` 不亮 / ①做完仍这样 → **重新拔插 82357B 适配器**（适配器/接口卡死
          也会把缓冲读数当响应吐出来）→ 重新跑 `preflight --id`；仍不行则重启整机。
-      **①这一态无法远程修**：表根本不听命令，`RESET`/IFC 都送不进去（手册 p.159：
-      "To remove the multimeter from Talk Only mode, press the Reset key or specify an
-      address other than 31"）——别反复试 `ks3458a_unstick`。
+      **①这一态能否远程修尚未定论**：手册 p.159 只给面板处置（"press the Reset key or
+      specify an address other than 31"），原理上表只听不讲时 `RESET`/IFC 送不进去；
+      但 2026-09-23 那次"拔插适配器"与"面板按键"同时做过、**成因未分离**，不能据此
+      断言远程一定救不回 → `ks3458a_unstick` 对这一态的**有效性待验证**，两条都试。
     **重启后的标准动作（2026-09-23 实测有效）**：重启 → 若仍连不上：**拔插适配器 + 打开
     Connection Expert** → 等初始化完 → `python -m keysight_3458a.preflight --id` 确认。
 
@@ -159,8 +160,9 @@ MCP server：`mcp_instruments/server.py`（65 工具 = 61 专用 + 3 通用护�
         ② **适配器/接口卡死**：`ioGPIB` 卡死后把缓冲里的读数一直当响应吐出来——
            处置：**重新拔插 82357B**（必要时重启整机）→ 跑 `preflight --id` 复验。
         ⚠ 2026-09-23 那次两个动作都做过、**无法分离**（用户回忆更像按键起效）→ 不要只试一条。
-        ⚠ 别指望远程救 Talk Only：`ks3458a_unstick`（IFC+RESET）只对"能听但一直吐"
-        （free-run）有效；`preflight --id` 会识别这一态并直接告诉你按哪个键。
+        ⚠ `ks3458a_unstick`（IFC+RESET）对 **Talk Only 的有效性待验证**：手册只给面板
+        处置，原理上表只听不讲时收不到 `RESET`；但 2026-09-23 两成因未分离，不能断言
+        远程一定无效。`preflight --id` 会识别这一态并提示按哪个键。
 
   **在脚本里集成 3458A（两种方式，二选一）**：
     ① **直接用库（脚本推荐）**：`from keysight_3458a import DMM3458A`
@@ -220,8 +222,16 @@ DG832 信号源（RIGOL DG800 系列）：
   才用 `config_cli.py set <kind> <host>` 让工具探测协议并核对身份后落库。
 - 工具报"**地址校验失败**"→ 该地址上的设备 `*IDN?` 与目标不符（DHCP 把旧 IP 分给了
   别的设备）。**不要重试硬连**，先 `instr_discover` 重新定位，或让用户更正 `devices.json`。
-- `instr_discover` 的返回体里 `resolved` = 当前解析表、`recognised_now` = 本次识别的设备、
-  `psu_local_restored` = 是否已把 DH1766 面板控制权归还现场。
+- `instr_discover` 的返回体五组字段：`lan` = 网段扫描结果（TCP 预筛 + 多协议 `*IDN?`，
+  键=资源串、值=IDN）；`visa` = VISA 资源列表（USB/GPIB/串口均自动探测 `*IDN?`，
+  串口被占用时给占用提示、空闲则探测后立即断开，约 2s/口）；`resolved` = 当前解析表；
+  `recognised_now` = 本次按 `*IDN?` 识别并写入缓存的设备；`psu_local_restored` =
+  是否已把 DH1766 面板控制权归还现场（该电源任何远程会话都会进 REM，见
+  `dh1766_control/docs/EXPERIENCE.md` §3.1）。
+- `cidr` 参数可选（如 `'10.0.0.0/24'`）；**省略时扫本机所有接口所在的私网网段**
+  （`cidrs` 字段列出实际用到的网段）——多网卡 / 挂 VPN / 代理 TUN 开启时都能覆盖到
+  仪器所在的那张网卡（TUN 只加虚拟网卡、不改物理网卡地址）。只想扫特定网段时显式传
+  `cidr`。
 - 只有通用工具 `instr_query` / `instr_write` 必须显式给 `resource`（面向任意设备，不能猜）。
 
 ### 3458A 的两条通路怎么配（`kind=ks3458a`）
@@ -248,7 +258,7 @@ DG832 信号源（RIGOL DG800 系列）：
 
 | 工具 | 用法要点 |
 |---|---|
-| `instr_query(resource, cmd, timeout_ms?)` | cmd 必须含 `?`；**问号后允许带参数**（`:MEASure:ITEM? VPP,CHANnel1`）；**可用 `;` 串联多段纯查询**（如 `:CHANnel4:DISPlay?;:CHANnel4:SCALe?`），但夹带写/复位/锁定会被拒；只读不留痕 |
+| `instr_query(resource, cmd, timeout_ms?)` | cmd 必须含 `?`；**问号后允许带参数**（`:MEASure:ITEM? VPP,CHANnel1`、`:TRIGger:EDGE:LEVel? MAX`、`:VOLT:DC?`）；**可用 `;` 串联多段纯查询**（如 `:CHANnel4:DISPlay?;:CHANnel4:SCALe?`），但夹带写/复位/锁定会被拒；只读不留痕 |
 | `instr_write(resource, cmd, readback_cmd?, confirm, timeout_ms?)` | **必须 confirm=True**；写前 drain、写后 SYST:ERR?、readback_cmd 给定即自动回读（铁律2/3）；每次调用含拒绝均落盘 `TEST_DATA/common/mcp_scpi_audit_*.jsonl` |
 
 护栏语义：查询判据＝**逐段检查每段都是查询单元**（命令头以 `?` 结尾、问号后可带参数）——多段纯查询放行，夹带写命令即拒（SCPI 里 `;` 是同消息内的命令单元分隔符、设备逐个执行，实测写单元会生效）；原写法偶有歧义（不是"整条以 ? 结尾"——SCPI 允许问号后带参数）；复位/存储覆写类（`*RST`/`*SAV`/`*RCL`/`:SYST:RES|FACT|PRES`，长短形式均拦）
@@ -261,8 +271,8 @@ DG832 信号源（RIGOL DG800 系列）：
 | 工具 | 参数 | 语义 |
 |---|---|---|
 | sds_auto_scale | ch=1-4；use_autoset | **use_autoset=True 破坏性**（重置所有通道），仅简单周期信号+无其他已调通道时用；无信号/小信号时逐档重试最长约 60s，最终优雅报错 |
-| sds_measure | item | SIMPle:ITEM 表 51 项：PKPK/MAX/MIN/AMPL/TOP/BASE/RMS/CRMS/MEAN/STDEV/MEDIAN/OVSP/OVSN/PER/FREQ/TMAX/TMIN/PWID/NWID/DUTY/NDUTY/RISE/FALL/EDGES/PPULSES...；ch=1-4 |
-| sds_get_waveform | ch, points=50000, save_csv | 读通道波形（电压+时间轴，**FFT 交叉验证可信**）：返回摘要（点数/时间窗/Vpp/interval/档位），save_csv=True 存 CSV 到 TEST_DATA/common/ 并返回路径；**不返回完整数组**（防上下文爆炸）；分析频率用 FFT/自相关，朴素过零对调幅信号会误判 |
+| sds_measure | item | SIMPle:ITEM 表 **51 项全支持**：PKPK/MAX/MIN/AMPL/TOP/BASE/LEVELX/CMEAN/MEAN/STDEV/VSTD/RMS/CRMS/MEDIAN/CMEDIAN/OVSN/FPRE/OVSP/RPRE/ULOWer/PER/FREQ/TMAX/TMIN/PWID/NWID/DUTY/NDUTY/WID/NBWID/DELAY/TIMEL/RISE/FALL/RISE20T90/FALL80T20/CCJ/PAREA/NAREA/AREA/ABSAREA/CYCLES/REDGES/FEDGES/EDGES/PPULSES/NPULSES/PACArea/NACArea/ACArea/ABSACArea；ch=1-4；无有效读数（如无信号测频率）超时后返回 device_error，**属正常现象** |
+| sds_get_waveform | ch, points=50000, save_csv | 读通道波形（电压+时间轴，**FFT 交叉验证可信**：interval 与 `ACQ:SRAT?` 一致、FFT 主频与设备硬件测量吻合）：返回摘要（点数/时间窗/Vpp/interval/档位），save_csv=True 存 CSV 到 TEST_DATA/common/ 并返回路径；**不返回完整数组**（防上下文爆炸）；分析频率用 FFT/自相关，朴素过零对调幅信号会误判 |
 | sds_screenshot | resource（可省略） | 截屏存 PNG 并返回路径，**可直接 Read 读图**；看波形形态/削顶/居中/菜单/光标/测量栏；无视觉能力时用 analyze_screen 像素分析兜底 |
 | sds_meas_threshold | source, thr_type, absolute, percent | 测量阈值源/类型/绝对值/百分比（边沿判据基础，手册 p.183-185）|
 | sds_meas_gate | on, ga, gb | 测量门限：只统计 GA~GB 窗口内波形（p.179-180）|
@@ -277,24 +287,24 @@ DG832 信号源（RIGOL DG800 系列）：
 | dmm_nplc | value? | 电压 DC 积分时间 NPLC（0.02/0.2/1/10/100，越大越准越慢）；无参查询，有参设置后回读 |
 | dmm_measure | function | volt_dc/volt_ac/curr_dc/curr_ac/res/fres/cont/cap/diod/freq |
 | dmm_configure | range_v | 设定量程后 :CONF? 回读滞后一拍，以实测为准 |
-| ks3458a_status | resource? | `ID?`/`ERRSTR?`/`TEMP?` + **`device` 设备回读**（`FUNC?`/`RANGE?`/`NPLC?`/`APER?`/`TARM?`/`TRIG?`/`NRDGS?`/`INBUF?`/`END?`/`MEM?`/`AZERO?`/`OFORMAT?`/`MFORMAT?`/`ISCALE?`——2026-09-23 真机实测 + **手册逐条核对**，`TARM/TRIG/END/INBUF/OFORMAT/MFORMAT/AZERO` 已按手册码表**解码**成 `4(HOLD)`/`1(ASCII)`/`4(SREAL)` 形式）+ `tracked`（本会话**下发过**什么，与回读分开报）。`TEMP?` = 内部温度，单位**摄氏度**（手册 p.37/50；实测 37.0） |
+| ks3458a_status | resource? | `ID?`/`ERRSTR?`/`TEMP?` + **`device` 设备回读**（`FUNC?`/`RANGE?`/`NPLC?`/`APER?`/`TARM?`/`TRIG?`/`NRDGS?`/`INBUF?`/`END?`/`MEM?`/`AZERO?`/`OFORMAT?`/`MFORMAT?`/`ISCALE?`——2026-09-23 真机实测 + **手册逐条核对**，`TARM/TRIG/END/INBUF/OFORMAT/MFORMAT/AZERO` 已按手册码表**解码**成 `4(HOLD)`/`1(ASCII)`/`4(SREAL)` 形式）+ `tracked`（本会话**下发过**什么，与回读分开报）。`TEMP?` = 内部温度，单位**摄氏度**（手册 p.37/50；实测 37.0 / 36.9） |
 | ks3458a_read / ks3458a_read_avg / ks3458a_read_stats | n≤1000 | 单次 DCV（`TARM SGL,1`）/ n 次平均 / `{n,mean,stddev,min,max}`（样本标准差）。读数非数值按 device_error 报，**不返回 0 兜底** |
 | ks3458a_read_series | n≤1000, interval_s?, save_csv? | **一次会话内连测 n 点**（重复测量主用）：返回 `{summary:{n,mean,stddev,min,max,duration_s,per_reading_s}, values?}`（n≤50 内联逐点，更大只回摘要；`save_csv=True` 落带 unix 时间戳的 CSV）。点间 `interval_s` 为主机 sleep（非精密时序）。单点失败自动恢复重试一次，仍失败则报错并附已采点数 |
 | ks3458a_burst | n, sample_interval_s?, dcv_range?, data_format?, save_csv? | 100k rdg/s 二进制突发（`PRESET DIG`+`MFORMAT/OFORMAT`+`MEM OFF`+`NRDGS`+`TRIG AUTO`+`TARM SYN`+`ISCALE?`）。`data_format="SINT"`（2 字节/读数，读 2n+2 字节）或 `"DINT"`（4 字节/读数，读 4n；**信号可能超档位 120% 时必用**，手册 p.173：DINT 满量程=档位×500%）。跑完**自动收尾**（`TARM/TRIG HOLD`+clear+有界 drain）并 `PRESET NORM` 恢复 ASCII 输出（非 RESET）。n 上限=设备 16777215（手册 p.207）。返回**摘要**；`save_csv=True` 落 `TEST_DATA/ks3458a/`。⚠ **改设备配置** |
-| ks3458a_configure | dcv_range, nplc | `dcv_range` 传数值=**固定档**（0.1/1/10/100/1000 V），传 `"AUTO"`=**自动挡**（`DCV AUTO`）。10V 档可到 12 V（手册 p.136：120% of range），但选档按 1.1 倍余量（保守）。**换档后自动丢首读数**（建立时间+自校准）。返回体带 `device_readback`（`FUNC?`/`RANGE?`/`ARANGE?`/`NPLC?` 实测回读） |
+| ks3458a_configure | dcv_range, nplc | **固定档 vs 自动挡**（手册 p.183-184）：`dcv_range` 传数值（0.1/1/10/100/1000 V）=**固定档**，传 `"AUTO"`=**自动挡**（`DCV AUTO`）。10V 档可到 12 V（手册 p.136：120% of range），但选档按 1.1 倍余量（保守）。**换档后自动丢首读数**（建立时间+自校准）。返回体带 `device_readback`（`FUNC?`/`RANGE?`/`ARANGE?`/`NPLC?` 实测回读） |
 | ks3458a_acv | range, band_lo?, band_hi?, sync?, nplc? | `ACV`/`SETACV ANA|SYNC`/`ACBAND <lo>,<hi>`（带宽需成对给）。`SETACV SYNC` 用于 <10 Hz、`ANA` 用于 >10 Hz。✅ 2026-09-23 实测：`ANA` 下 `TARM SGL,1` 能读出交流电压（4.11 mV AC）；`SYNC/RNDM` 采样法未测 |
 | ks3458a_autorange | on | `ARANGE ON` / `ARANGE OFF`（手册 p.160）；**只开关自动挡**，不碰档位数值/NPLC。回读看 `device.arange`（`1(ON)`/`0(OFF)`）与 `device.autorange`（`FUNC?` 在自动挡下仍返回固定档值，**别用它判自动挡**） |
 | ks3458a_reset | confirm | `RESET`+`END ALWAYS`+`INBUF ON`；**回到开机测量配置**（= 手册 p.26 Table 5 上电状态：`DCV AUTO`/`NPLC 10`/`END OFF`/`INBUF OFF`/`MFORMAT SREAL`…）。MCP 连接默认**不**重置仪表，这是唯一重置入口 |
-| ks3458a_unstick | confirm | **救砖**（顺序逐条移植参考项目 `dmm_sicl.py::open()`）：`IFC` → clear → `TARM/TRIG HOLD` → **`RESET`** → clear → `END ALWAYS`/`INBUF ON` → 读 `ID?`。用于"表能听但一直吐数 / 一切调用超时"这类**free-run / 收尾失败**场合。返回 `ifc_path`（`visa`/`sicl`/`none`）+ `idn` + 一次读数。⚠ **破坏性**（`RESET` 回开机配置）；⚠ **对 Talk Only 无效**（表不听，RESET 送不进去——那种情况走面板 `Address` → `9` → `Enter`） |
+| ks3458a_unstick | confirm | **救砖**（顺序逐条移植参考项目 `dmm_sicl.py::open()`）：`IFC` → clear → `TARM/TRIG HOLD` → **`RESET`** → clear → `END ALWAYS`/`INBUF ON` → 读 `ID?`。用于"表能听但一直吐数 / 一切调用超时"这类**free-run / 收尾失败**场合。返回 `ifc_path`（`visa`/`sicl`/`none`）+ `idn` + 一次读数。⚠ **破坏性**（`RESET` 回开机配置）；⚠ **对 Talk Only 的有效性待验证**（手册只给面板处置 `Address` → `9` → `Enter`；2026-09-23 两成因未分离，不能断言远程一定无效） |
 | （3458A 通用） | — | **禁用** `instr_query`/`instr_write` 操作 3458A——那两条面向 SCPI，而 3458A 是 `ID?`/`ERRSTR?`/`RESET`/`TARM SGL,1` 那套；库只允许白名单命令（见 `keysight_3458a/docs/COMMANDS_3458A.md`） |
 | dho_measure_item | item, ch, ch2?, samples? | RIGOL 长名：VPP/VMAX/VAVG/PERiod/FREQuency...；samples>1 给均值统计；无值分类报因（suspicious/hint）|
 | dho_channel / dho_timebase / dho_trigger | 同 mho_* 同名工具 | DHO 的设置类工具（同一套内核语义）；⚠ DHO 不在本台，未实机验证 |
-| mho_measure_item | item, ch, ch2?, samples?, rails? | 手册 3.17.2 表：单信源 VMAX/VMIN/VPP/VTOP/VBASe/VAMP/VAVG/VRMS/MARea/MPARea/PERiod/FREQuency/RTIMe/FTIMe/PWIDth/PDUTy/PPULses/PEDGes/ACRMs…；双信源 RRDelay/RRPHase 等需给 ch2；**samples=5** 连读给 mean/min/max/stddev；无有效值时 `suspicious` ∈ channel_off/off_screen/near_edge/few_edges/no_signal + `hint`；返回带 `probe_x`（探头比 ≠1 时幅度类读数是**探头端**电压）；**`rails=True`** 额外读**顶轨/底轨**（VTOP/VBASe）并**上下分别**判断贴边——`edges_touching`（["top"]/["bottom"]/两者）+ 各自 `hints`（顶贴→offset 调更负；底贴→offset 调更大，方向相反故分开报）|
-| mho_channel | ch, scale?, offset?, coupling?, probe?, display? | **垂直设置**：固定 **scale→offset** 顺序（改 scale 会等比缩放 offset）；通道 OFF 时自动先开；偏置超量程（实测 ±20 V）→ `adjusted`+`reasons`；返回 `window`=[bottom, top]（**中心 = −offset**）。只动指定通道 |
-| mho_timebase | scale?, offset? | 时基（s/div、位移）**两者都回读**；**全局项**。屏内 <2 个周期时频率读不到（20 µs/div ↔ 100 µs/div 实测）|
+| mho_measure_item | item, ch, ch2?, samples?, rails? | 手册 3.17.2 表。**单信源 30 项**：VMAX/VMIN/VPP/VTOP/VBASe/VAMP/VAVG/VRMS/OVERshoot/PREShoot/MARea/MPARea/PERiod/FREQuency/RTIMe/FTIMe/PWIDth/NWIDth/PDUTy/NDUTy/TVMAX/TVMIN/PSLewrate/NSLewrate/VUPPer/VMID/VLOWer/PVRMs/PPULses/NPULses/PEDGes/NEDGes/ACRMs；**双信源 8 项**（需同时给 ch2）：RRDelay/RFDelay/FRDelay/FFDelay（延迟）、RRPHase/RFPHase/FRPHase/FFPHase（相位，四组合=先 A 后 B 的沿型）；ch=1-4。**samples>1**（≤200）连读给 mean/min/max/stddev/count/invalid（单次读数抖动明显：现场同状态连读得 7.4747/7.4749/7.4749 V，**结论要用均值**）；无有效值时 `suspicious` ∈ channel_off/off_screen/near_edge/few_edges/no_signal + `hint`；返回带 `probe_x`（探头比 ≠1 时幅度类读数是**探头端**电压）；**`rails=True`** 额外读**顶轨/底轨**（VTOP/VBASe）并**上下分别**判断贴边——`edges_touching`（["top"]/["bottom"]/两者）+ 各自 `hints`（顶贴→offset 调更负；底贴→offset 调更大，方向相反故分开报）；**未标定格数的家族不做贴边判定**（`note` 说明，不猜）|
+| mho_channel | ch, scale?, offset?, coupling?, probe?, display? | **垂直设置**：固定 **scale→offset** 顺序（改 scale 会等比缩放 offset）；通道 OFF 时自动先开（OFF 下写入被静默忽略）；偏置超量程 → `adjusted`+`reasons`；返回 `window`=[bottom, top]（**中心 = −offset**）。只动指定通道。**偏置量程上限随档位变**（2026-09-16 实机阶梯：0.05 V/div→±1 V、0.1~0.2→±10 V、0.5~2→±20 V、5~10→±100 V）——小档位下"居中"可能做不到，要先抬档位（证据 `docs/tool_optimization_20260915.md` §P1-3）|
+| mho_timebase | scale?, offset? | 时基（s/div、位移）**两者都回读**；**全局项**。屏内 <2 个周期时频率读不到（20 µs/div 看 5 kHz 读不到、100 µs/div 立刻读到 4.9993 kHz——是窗口不够，不是精度问题）|
 | mho_trigger | source?, level?, slope?, mode?, sweep? | 边沿源/电平/斜率 + 模式/扫描（枚举对照手册）；**全局项**；电平受限时 reasons 带该通道窗口范围 |
-| mho_fit_channel | ch, occupancy=0.7, margin=0.08, max_iter=12 | **单通道自动定标/居中**：判据 可测/不贴边/占屏率 0.4~0.9；平直信号 `flat=true` 且**保持档位不猜**；超量程/未收敛 → `ok=false`+`reason`+`trace` 证据。**不是 autoset**（只动一个通道）|
-| mho_get_waveform | ch, points=1000, mode, fmt, save_csv | NORMal **最多 1000 点**（超限报 param_validation）；RAW/MAXimum 可多但 RAW 必须已 STOP；fmt=BYTE/WORD/ASCii；voltage=(raw-YORigin-YREFerence)*YINCrement；RAW xinc 与采样率自洽（实测 5e-10s @2GSa/s） |
+| mho_fit_channel | ch, occupancy=0.7, margin=0.08, max_iter=12 | **单通道自动定标/居中**：判据 ①可测（读数非 9.9E37）②不贴边（margin 带内）③占屏率 ∈ [0.4, 0.9]（目标 occupancy）；算法 通道必须已开 → 不可测/贴边则沿 1-2-5 逐档放大 → `scale = span/(occupancy×8 格)`、`offset = −中心` → **先 scale 后 offset** 写回 → 重测验证；平直/无信号 → `flat=true` 且**保持档位不猜**（按均值居中）；超量程/未收敛 → `ok=false`+`reason`+`trace` 证据。**不是 autoset**（只动一个通道）|
+| mho_get_waveform | ch, points=1000, mode, fmt, save_csv | NORMal **最多 1000 点**（手册 3.28.4；超限报 param_validation）；RAW/MAXimum 可多但 RAW 必须已 STOP；fmt=BYTE/WORD/ASCii；voltage=(raw-YORigin-YREFerence)*YINCrement；RAW xinc 与采样率自洽（实测 5e-10s @2GSa/s） |
 | mho_screenshot | resource? | `:DISPlay:DATA? PNG` 原生 PNG（**无需转码**），存 TEST_DATA/mho/ 并返回路径，可直接 Read 读图 |
 | mho_acquisition | action=run\|stop\|single\|force | **stop 会冻结采集**（共享实验台上可能打断他人观察）；RAW 读内存波形前必须 stop，读完记得 run |
 | mho_autoset | confirm | **全局破坏性**：重置**所有**通道档位/时基/触发；仅在"信号简单周期 + 无其他已调通道"时用 |
