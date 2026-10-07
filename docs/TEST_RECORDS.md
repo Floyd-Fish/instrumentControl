@@ -417,5 +417,12 @@
     都不会并发；`session_lock`（只告警不阻塞）对以 stdio 直连的外部脚本仍然有效，**无需改动**。
   - 证据：`TEST_DATA/common/mem_probe_pyvisa_{unfixed,threads1}_*.json`、
     `TEST_DATA/common/mcp_http_e2e_*.json`；日志 `mcp_instruments/run/logs/`（gitignore）。
-  - 遗留：自启方式（计划任务 vs 手动）待定；OpenCode 侧 `opencode.json` 改 remote、
-    重启回收 12 个 stdio 实例、`opencode mcp list` 验收，由 OpenCode 侧执行。
+  - **OpenCode 侧已执行（2026-10-08）**：`opencode.json` 的 `mcp.instruments` 由 local 改为
+    remote（`http://127.0.0.1:8765/mcp`、`oauth=false`；备份 `opencode.json.bak_20261008_021831`；
+    切换脚本 `TEST_SCRIPTS/common/switch_opencode_mcp_remote_20261008.py`，`--to local` 可回滚）。
+    自启 = **仅登录触发**的计划任务 `instrumentControl-MCP-Server`（`run_remote.ps1 install-task`）；
+    实测 `LastTaskResult=0`，且**任务窗口关闭后服务仍存活**（父 pwsh 已退出 → 无 Job Object 回收）。
+    生效需重启 opencode —— 重启即回收旧的 stdio 子进程（当时本机 11 份 × 805 MB）。
+  - 观察项：DSH 也配了 instruments（实测 1 份 805 MB，配置在 `~/.dsh`，不在本仓），本次未处理。
+  - 注意：`opencode mcp list` 不支持 `--global`（只读**项目级**配置，本机是全局配置故返回空），
+    因此验收标准 5 改为"重启后在会话里实际调用仪器工具成功"，不用该命令。
