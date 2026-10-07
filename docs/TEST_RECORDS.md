@@ -392,3 +392,30 @@
   `verify_mcp_tools_meta.py` 存成了 **CRLF**，故提交用 `core.autocrlf=false` 保持 CRLF，避免
   全文件行尾抖动）。重放后 `verify_mcp_tools_meta.py` **全部 PASS**（68 工具、`description gap = 0`、
   stdout 纯净），`py_compile` 通过；自检行文案按上游断言保留 `description <n>` 空格写法。
+
+- 2026-10-08（MCP 单例化 + OpenBLAS 内存修复，需求文档由 ChatSpace 侧出：
+  `ChatSpace/TEST_RESULTS/mem-audit_20261008/MCP_REMOTE_SINGLETON_REQ_20261008_0220.md`）：
+  - **根因**：OpenCode 的 `instruments`（local/stdio）按 workspace 目录各起一个子进程，
+    本机同时 12 份；每份私有提交 805 MB。链路 = pyvisa 1.16.2 `util.py` 模块级 `import numpy`
+    → numpy 2.3.5(scipy-openblas64) 在 32 线程 CPU 上初始化 OpenBLAS 线程池（~23 MB/线程 calloc）。
+  - **需求 A（内存）**：`server.py` import 块之后加 `os.environ.setdefault("OPENBLAS_NUM_THREADS", "1")`
+    （必须在任何会拉起 numpy 的三方库 import 之前；用 setdefault 允许启动方覆盖）。
+    独立复现：`import pyvisa` 私有提交 **754.8 MB → 15.5 MB**；整服务 **806 → 66.2 MB**。
+    全仓运行期代码**无任何 `import numpy`**，numpy 唯一来源是 pyvisa → 单线程无副作用面。
+  - **需求 B（单例）**：新增 `_run_server()` 按 `MCP_TRANSPORT` 选传输——默认 stdio（行为不变 =
+    回滚路径）；`streamable-http` 监听 `127.0.0.1:8765/mcp`（`MCP_HTTP_HOST/PORT` 可覆盖）；
+    **未知取值显式报错退出，不静默回退**。运维脚本 `mcp_instruments/run_remote.ps1`
+    （start/stop/restart/status）对齐 kimi-webbridge daemon 模型：start 幂等、pid/addr 状态文件
+    为唯一事实来源、绝不静默换端口、日志带时间戳 + `.prev` 一代、健康检查走真实 MCP
+    `initialize` 握手（curl 带 `--noproxy`，本机 Clash 会吞 localhost 请求）。
+  - **E2E（`TEST_SCRIPTS/common/verify_mcp_http_e2e_20261008.py`）**：握手
+    `serverInfo={"name":"instruments","version":"1.27.0"}`、`tools/list = 68`、常驻实例私有提交
+    **66.2 MB < 100 MB**、`start` 二次调用 no-op、`stop` 后端口释放且状态文件清理。
+    对照实测：本机 12 份 stdio 合计 **9733 MB** → 单例目标 **~68 MB**（省 9.6 GB）。
+  - **并发语义（需求文档决策点 4 的事实回报）**：`server.py` 已有 `_DEVICE_LOCK`（全局单锁）
+    + `_DeviceExecutor` 单 daemon worker 线程 → **进程内全局串行**，单例后同一仪器/不同设备
+    都不会并发；`session_lock`（只告警不阻塞）对以 stdio 直连的外部脚本仍然有效，**无需改动**。
+  - 证据：`TEST_DATA/common/mem_probe_pyvisa_{unfixed,threads1}_*.json`、
+    `TEST_DATA/common/mcp_http_e2e_*.json`；日志 `mcp_instruments/run/logs/`（gitignore）。
+  - 遗留：自启方式（计划任务 vs 手动）待定；OpenCode 侧 `opencode.json` 改 remote、
+    重启回收 12 个 stdio 实例、`opencode mcp list` 验收，由 OpenCode 侧执行。
