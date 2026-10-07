@@ -426,3 +426,29 @@
   - 观察项：DSH 也配了 instruments（实测 1 份 805 MB，配置在 `~/.dsh`，不在本仓），本次未处理。
   - 注意：`opencode mcp list` 不支持 `--global`（只读**项目级**配置，本机是全局配置故返回空），
     因此验收标准 5 改为"重启后在会话里实际调用仪器工具成功"，不用该命令。
+
+- 2026-10-08（MCP 单例验收 + 同类问题排查）：
+  - **MCP 正常工作**（全走 remote 单例真实调用路径）：68 工具、握手 `instruments v1.27.0`、
+    错误分类准确（只给真正离线的设备报 `connection`）、`instr_discover` 正常发现并回写缓存、
+    `instr_query` 通用查询可用、`psu_status` 安全门告警正确。
+  - **器件验收（只读，不改设备状态）**：在线 3 台全部实测通过 —— SDS824X HD（C2
+    FREQ=10003.02 Hz / PKPK=0.829 V；C1 9999.65 Hz）、SDG2122X（C1/C2 均 SINE 10000 Hz）、
+    DH1766A-1（CH1 11.991 V/0.394 A、CH2 11.990 V/0.192 A、CH3 OFF、NORM、
+    `safe=false` + "已有通道带电"告警）。**离线 5 台（设备侧，非 MCP 故障）**：DMM `.123`
+    不在 LAN、DHO `.146:5555` 无响应、MHO 未发现、DG832(USB) 未发现、3458A `GPIB0::9`
+    online=false；另有 4 个串口驱动挂起。
+  - **3458A 实现澄清**：主路径 `keysight_3458a/transport.py` 用 **ctypes 直接调
+    `ktvisa32.dll`，不依赖 pyvisa** —— 架构上本就有"独立于 pyvisa"的设备；
+    但当前 `ks3458a_status` 报 `device_absent`（preflight 在 PnP 里找不到 82357B
+    `VID_0957&PID_0718`）→ 属适配器/连线层，需现场确认。
+  - **DSH 也切 remote**：`~/.dsh/cordis.patch.yml` 的 `mcp-instruments` 由 stdio 改为
+    `transport: streamable-http` + `url: http://127.0.0.1:8765/mcp`
+    （备份 `cordis.patch.yml.bak_20261008_022817`）；**待重启 DSH 生效**。
+  - **同类问题（他项目，供参考）**：`D:\MyProjects\AI\schematics_review_tool\scripts\mcp_server.py`
+    被同一 opencode 起了 **10 份**（10 × ~12 MB = 120 MB）；它是**零第三方依赖的自研
+    stdio JSON-RPC**（文件头自述），**不能照抄本仓 FastMCP 的一行分支** —— 要 remote 须
+    自实现 streamable-http（或引入 `mcp` 库，违背其零依赖原则）。量级比本仓小两个数量级
+    （12 MB/份 vs 805 MB/份），优先级待评估。
+  - 新增工具：`TEST_SCRIPTS/common/mcp_call_tool_20261008.py`（通用单工具调用器）、
+    `verify_mcp_device_acceptance_20261008.py`（批量只读验收）；证据
+    `TEST_DATA/common/mcp_device_acceptance_*.json`。
