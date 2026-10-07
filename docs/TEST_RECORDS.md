@@ -363,3 +363,32 @@
     `RigolScope._float()`（数值项拿到非数值响应 → "响应错位 + 处置建议"）与
     `align_session()`（`*IDN?` 判对齐 + 尝试排干）。DG832 的 USBTMC 节点当日两次掉进
     PnP Error，均用 `common/usb_reset.py --kind dg --allow-reset --verify-idn` 秒级恢复。
+- 2026-09-22（MCP stdio 编码：GBK → UTF-8；启动自检改 ASCII）：用户报 DSH 控制台出现
+  `xterm.js: Parsing error: {... code: 65533 ...}`（U+FFFD＝非 UTF-8 字节被按 UTF-8 解码），
+  且 traceback 行首被吃掉半截（现场片段 `ackages\anyio\_backends\_asyncio.py`）。根因**不在
+  仪器侧**：stdio 传输下 MCP 子进程的 stderr 是 **pipe**，Python 在中文 Windows 上按
+  **GBK(cp936)** 写中文日志，而客户端按 **UTF-8** 读 → 替换字符，xterm 解析器随后报
+  `code: 65533`。
+  - 编码矩阵实测（本机 `pythoncore-3.14-64`，stderr = pipe）：默认 `gbk`｜`PYTHONUTF8=1` →
+    `utf-8`｜`sys.stderr.reconfigure(encoding="utf-8")` → `utf-8`。复现：`"启动自检"` 在默认
+    口径下写出 `c6f4b6afd7d4bcec`（GBK 字节），按 UTF-8 解码全成替换字符。
+  - 修法（三条都落地）：① `server.py` **模块级** `sys.stderr.reconfigure(encoding="utf-8",
+    errors="backslashreplace")`——治本、不依赖客户端；只改现有 wrapper 的编码，不动对象、
+    不动 `sys.stdout.buffer`，不影响 `mcp.run()` 自建的协议流；② 启动自检与失败兜底**改纯
+    ASCII 英文**（异常用 `ascii(e)` 转义），标记词 `启动自检` → `startup self-check`；
+    ③ DSH 侧（用户配置，不在本仓）`~/.dsh/profiles/web/cordis.patch.yml` 的 `mcp-instrument`
+    加 `env: {PYTHONUTF8: '1'}`——**必须重启 DSH** 才生效（HMR 不重启已有 MCP 子进程）。
+  - 回归：`verify_mcp_tools_meta.py` §5 **不需要改**——上游已用 ASCII 锚点（`[instrumentControl]`
+    + 正则 `description` + 空白 + 数字），只要自检行是 ASCII 且保留 `description <n>` 空格写法即可。
+    字节级复验——显式移除 `PYTHONUTF8`/`PYTHONIOENCODING`（回到默认 GBK 口径）抓 server stderr =
+    **401 字节 / 非 ASCII 0 个**；`py_compile` 通过；patch YAML `yaml.compose` 语法 OK。
+  - 留痕：`TEST_DATA/common/mcp_stderr_encoding_20260922_183137.json`（编码矩阵 + 逐行 stderr）。
+  - 对齐提醒：自检行措辞变了，按中文字面 grep 的脚本要跟改；本仓两个验收脚本（common 与 ks3458a）
+    都已改用 ASCII 锚点、无需改动，但都要求 `description <n>` 空格写法（勿写成 `description=<n>`）。
+
+- 2026-09-23（合并上游 3458A 批次 + 重放本次编码改动）：`git fetch` 到 `d9aecbd`（12 个提交：
+  3458A/82357B 库与工具、SKILL/docs、工具数 57→68），本地 0 独有提交 → `main` **fast-forward**；
+  编码改动从安全分支 `mcp-stderr-utf8`(be1060c) **重放**到新版 `server.py`（上游把该文件与
+  `verify_mcp_tools_meta.py` 存成了 **CRLF**，故提交用 `core.autocrlf=false` 保持 CRLF，避免
+  全文件行尾抖动）。重放后 `verify_mcp_tools_meta.py` **全部 PASS**（68 工具、`description gap = 0`、
+  stdout 纯净），`py_compile` 通过；自检行文案按上游断言保留 `description <n>` 空格写法。

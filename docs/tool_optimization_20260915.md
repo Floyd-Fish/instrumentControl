@@ -31,6 +31,12 @@ SDS 看波形）时逐条踩到的问题。**每条都附实测命令与回读�
 | P2-6 | **已完成** | `instr_write` 多段回读新增 `readback_fields`（段↔值配对）；段数不符时如实说明，不硬配 |
 | P2-7 | **已完成** | 测量返回带 `probe_x`；探头比 ≠1 时附 `warnings` 说明"幅度类读数为探头端电压"；`*_status` 里给 `probe_note` |
 
+**追记（2026-09-22）**：上表 P0-1 的"启动自检"行已改**纯 ASCII 英文**（标记词 `启动自检` →
+`startup self-check`），且 `server.py` 在**导入时**把 `sys.stderr` 固定为 UTF-8——原中文行在
+中文 Windows 上按 GBK(cp936) 写出，被 MCP 客户端按 UTF-8 解码成替换字符 U+FFFD（DSH 侧
+症状＝`xterm.js: Parsing error: ... code: 65533`，traceback 路径行还会被吃半截）。根因、
+编码矩阵与回归见 `TEST_RECORDS.md` 2026-09-22 条。
+
 **回归**：`TEST_SCRIPTS/common/verify_rigol_scope_semantics.py`（24 项断言，离线）——把你这次踩到的三条设备行为
 （OFF 静默忽略 / 改 scale 等比缩放 offset / 偏置 ±20 V 钳制）做成了**设备模型**（`FakeTrapScope`），
 外加"离屏→逐档放大定标""平直不猜档位""超量程如实报"等场景；并复现了 scale 0.9/1.0 的标定证据。

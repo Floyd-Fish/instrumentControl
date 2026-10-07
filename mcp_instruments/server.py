@@ -329,6 +329,20 @@ def _fix_stdout_once() -> None:
         sys.stdout = sys.stderr
 
 
+# 2026-09-22：stderr 编码在**导入时**就固定成 UTF-8。
+# 为什么：中文 Windows 下 Python 默认按 GBK(cp936) 写 stderr，而 MCP 客户端（DSH 等）
+# 把子进程 stderr 当 UTF-8 文本读 → 中文/箭头变成替换字符 U+FFFD（现场症状：终端侧
+# xterm.js `Parsing error: code 65533` 噪音 + traceback 路径行被吃掉半截）。
+# `errors="backslashreplace"` 顺带消掉"日志里有不可编码字符 → UnicodeEncodeError 打断
+# 输出"这一类故障；异常文本另外用 ascii() 转义（见 __main__ 自检）。
+# 与 `_fix_stdout_once` 的区别：只改现有 stderr wrapper 的编码，不动对象、不动 fd、不动
+# `sys.stdout.buffer`，因此不可能影响 mcp.run() 后面自建的协议流 → 可以在导入时执行。
+try:
+    sys.stderr.reconfigure(encoding="utf-8", errors="backslashreplace")
+except Exception:  # 非 TextIOWrapper / 已被替换（pytest、自定义流）时静默跳过
+    pass
+
+
 class _DeviceExecutor:
     """单 worker 设备执行器：准入闸门 + 墙钟 deadline + 线程封闭。
 
@@ -2479,18 +2493,27 @@ if __name__ == "__main__":
     # 启动自检（P0-1③，docs/tool_optimization_20260915.md）：把"查询式判据"的实测结果
     # 打一行到 **stderr**。历史事故：磁盘代码已改、跑着的进程仍是旧规则，调用方被误导为
     # "工具不支持参数化查询"，白绕一圈。stdout 是 JSON-RPC 协议通道，绝不能打印。
+    # 2026-09-22：本段输出一律 **ASCII 英文**（非 ASCII 字符一个都不留）。
+    # 原因：中文 Windows 下 Python 的 stderr 默认 GBK(cp936)，这些字节被 DSH 侧终端
+    # 按 UTF-8 解码 → 替换字符 U+FFFD → xterm.js "Parsing error: code 65533" 噪音，
+    # traceback 的路径行还会被吃掉半截。异常文本用 ascii() 转义，整行保证纯 ASCII。
+    # 文案要与上游断言兼容：verify_mcp_tools_meta.py / verify_mcp_ks3458a_tools.py
+    # 用「description + 空白 + 数字」判「缺口为 0」，故保留 `description <n>` 空格写法。
     try:
-        print("[instrumentControl] 启动自检 | 参数化查询 "
-              f"':MEASure:ITEM? VPP,CHANnel1' → query_only="
+        print("[instrumentControl] startup self-check | parametric query "
+              f"':MEASure:ITEM? VPP,CHANnel1' -> query_only="
               f"{_is_query_only(':MEASure:ITEM? VPP,CHANnel1')} | "
-              "多段纯回读 ':CHANnel4:DISPlay?;:CHANnel4:SCALe?' → query_only="
+              "multi-segment readback "
+              "':CHANnel4:DISPlay?;:CHANnel4:SCALe?' -> query_only="
               f"{_is_query_only(':CHANnel4:DISPlay?;:CHANnel4:SCALe?')} | "
-              "夹带写 ':CHANnel4:DISPlay?;:OUTP4 ON' → query_only="
-              f"{_is_query_only(':CHANnel4:DISPlay?;:OUTP4 ON')}（False=会被拒） | "
-              f"复位 '*RST' → forbidden={_is_forbidden('*RST')}",
+              "write smuggled in ':CHANnel4:DISPlay?;:OUTP4 ON' -> "
+              f"query_only={_is_query_only(':CHANnel4:DISPlay?;:OUTP4 ON')} "
+              "(False = rejected) | reset '*RST' -> "
+              f"forbidden={_is_forbidden('*RST')}",
               file=sys.stderr, flush=True)
     except Exception as e:  # 自检失败不影响服务启动
-        print(f"[instrumentControl] 启动自检失败：{type(e).__name__}: {e}",
+        print("[instrumentControl] startup self-check failed: "
+              f"{type(e).__name__}: {ascii(e)}",
               file=sys.stderr, flush=True)
     # 工具元信息自检（2026-09-16 加）：**每个工具的 description 来自其函数 docstring**，
     # 漏写 docstring 的工具会在客户端里显示成"无描述"（历史上退役的 DG832 独立服务器
@@ -2499,11 +2522,12 @@ if __name__ == "__main__":
     try:
         _tools = mcp._tool_manager.list_tools()
         _no_desc = [t.name for t in _tools if not (t.description or "").strip()]
-        print(f"[instrumentControl] 启动自检 | 工具 {len(_tools)} 个，"
-              f"缺 description {len(_no_desc)} 个"
-              + (f"：{_no_desc}" if _no_desc else "（全部有）"),
+        print(f"[instrumentControl] startup self-check | tools={len(_tools)}, "
+              f"missing description {len(_no_desc)}"
+              + (f" {_no_desc}" if _no_desc else " (all present)"),
               file=sys.stderr, flush=True)
     except Exception as e:
-        print(f"[instrumentControl] 工具元信息自检跳过：{type(e).__name__}: {e}",
+        print("[instrumentControl] tool metadata self-check skipped: "
+              f"{type(e).__name__}: {ascii(e)}",
               file=sys.stderr, flush=True)
     mcp.run()
