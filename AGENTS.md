@@ -229,6 +229,14 @@ AI/Agent 操作仪器必须遵守以下规范。
 - MCP 服务器：`mcp_instruments/server.py`（68 工具 = 64 设备专用 + 3 通用护栏 + 1 故障兜底
   instr_discover/instr_query/instr_write/usb_reset——新设备零代码接入；zcode 用户级 config 已注册
   `instruments`；工具选择/参数语义/安全门见 skill `instrument-mcp`）
+- **MCP 单例运行（2026-10-08）**：`server.py` 支持 `MCP_TRANSPORT=streamable-http`
+  常驻单例（`mcp_instruments/run_remote.ps1 start|stop|restart|status`，默认
+  `http://127.0.0.1:8765/mcp`），供所有项目共用，取代"每个工作目录各起一个 stdio 子进程"
+  （本机曾 12 份 × 805 MB ≈ 9.7 GB → 单份 68 MB）。**不设该变量时行为与原来完全一致
+  （stdio = 回滚路径）**；未知取值显式报错、不静默回退。运维口径对齐 kimi-webbridge：
+  start 幂等、pid/addr 状态文件在 `mcp_instruments/run/`（gitignore）、绝不静默换端口、
+  健康检查走真实 MCP `initialize` 握手。进程内 `_DEVICE_LOCK` + 单 worker 已全局串行，
+  单例后同仪器不会并发（`session_lock` 的跨进程告警对 stdio 外部脚本仍有效）。
 - **skill 的权威源在仓库 `skills/<name>/SKILL.md`**（如 `skills/instrument-mcp/SKILL.md`）：
   **不要**在 `~/.agents/skills/` 下另存一份副本——那里是 `scripts/install_skills.py`
   建的分发链接（junction），改哪边都是同一份文件。安装/检查/卸载用该脚本
