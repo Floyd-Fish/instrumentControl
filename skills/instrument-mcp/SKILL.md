@@ -1,6 +1,6 @@
 ---
 name: instrument-mcp
-description: instrument MCP 服务器使用指引 — 七台仪器（SDS 示波器/SDG 信号源/Keysight 34465A 万用表/DHO 示波器/MHO900 示波器/DG832 信号源/DH1766 电源）的 MCP 工具选择、参数语义、安全门、典型工作流。触发条件：使用 instrument MCP 工具、sds_/sdg_/dmm_/dho_/mho_/dg_/psu_ 前缀工具、仪器测量/定标/截图/关机决策。
+description: instrument MCP 服务器使用指引 — 八台仪器（SDS 示波器/SDG 信号源/Keysight 34465A 万用表/DHO 示波器/MHO900 示波器/DG832 信号源/DH1766 电源/Keysight 3458A 八位半万用表）的 MCP 工具选择、参数语义、安全门、典型工作流，以及 3458A 非 SCPI 用法与 GPIB/VISA 分层排查（preflight）。触发条件：使用 instrument MCP 工具、sds_/sdg_/dmm_/dho_/mho_/dg_/psu_/ks3458a_ 前缀工具、仪器测量/定标/截图/关机决策、3458A、GPIB、VISA、仪器连不上/不通/读超时、仪器排查、preflight。
 ---
 
 # instrument MCP 使用指引
@@ -447,7 +447,36 @@ MCP 进程通常已带管理员（可直接用）；若工具报"需要管理员
   设备离线/总线挂起；**命令可能已下发**（写操作请回读确认）
 - `device_busy`：**设备正被另一个调用占用**（本次未下发任何命令、也未排队）。
   通常是上一个调用很慢或已超时但 worker 仍在跑——等它结束后重试即可；只有在长时间
-  持续 BUSY（数十秒到数分钟以上）时才说明底层驱动真卡死，此时重启 MCP 服务恢复
+  持续 BUSY（数十秒到数分钟以上）时才说明底层驱动真卡死，此时用
+  `run_remote.ps1 restart` 恢复（见下方「MCP 服务不可用」）
+
+### MCP 服务不可用：Agent **自己拉起**，不要问用户（2026-10-08 起）
+
+`instruments` 是**常驻单例**（streamable-http，`127.0.0.1:8765/mcp`），由"登录时启动"的
+计划任务拉起 —— 但任务**只在登录时跑一次**，服务中途挂掉不会自愈。所以由 Agent 兜底，
+**不要为此打断用户**。
+
+**先分辨是哪一类故障**（别把设备问题当服务问题）：
+
+| 现象 | 含义 | 处置 |
+|---|---|---|
+| **所有** `instruments_*` 工具都失败 / 客户端报连不上 | 服务挂了 | **自己拉起**（下面命令） |
+| 只有某个工具报 `connection` | 服务在跑，是**设备**离线 | 按本节其余流程排查，**不要重启服务** |
+| 报 `timeout` / `device_busy` | worker 卡在驱动里 | 先等它结束；持续数十秒以上才 `restart` |
+
+**自救命令（幂等，随时可跑，安全）**：
+
+```powershell
+pwsh -NoProfile -File D:\MyProjects\AI\instrumentControl\mcp_instruments\run_remote.ps1 status
+# running:false → 拉起；running:true → 服务没挂，去查别的原因
+pwsh -NoProfile -File D:\MyProjects\AI\instrumentControl\mcp_instruments\run_remote.ps1 start
+```
+
+`start` **幂等**（已在跑就 no-op），且用 **detached 进程**启动 —— 不依赖这个 shell 存活，
+拉起后**重试原来的工具调用**即可。若 `start` 自己失败（会打印 stderr 尾部），
+把原文报给用户，**不要反复重试**。
+
+`stop` / `restart` 会中断**其他客户端**正在跑的仪器操作 —— 只在确认服务真的卡死时才用。
 
 ### 卡死后的恢复：为什么"重启 MCP"确实有效（2026-09-16 实测）
 
@@ -456,6 +485,8 @@ MCP 进程通常已带管理员（可直接用）；若工具报"需要管理员
 "重启 MCP"这条恢复路径反而失效；离线实验与回归见
 `TEST_SCRIPTS/common/verify_executor_exit.py`）。所以现在：即使某次调用卡在驱动里，
 进程仍能正常退出/被杀，重启即可恢复。
+
+重启方式（2026-10-08 单例化后）：`pwsh -File mcp_instruments\run_remote.ps1 restart`。
 
 ### ⚠ 同一台仪器**绝对不能**两个会话并发（2026-09-17 真机实测）
 
@@ -481,16 +512,19 @@ MCP 进程通常已带管理员（可直接用）；若工具报"需要管理员
   "响应错位：:ACQuire:SRATe? 回 'NORM'"）→ 说明仪器响应流已被并发/超时未读污染，
   **数据不可信**：先换协议（VXI-11 ↔ raw）或重置该仪器 LAN/重启，再继续测。
 
-### ⚠ 串行化只在**单个 MCP 进程内**成立（多实例不互斥）
+### ⚠ 串行化的边界：进程内全局串行，跨进程仍不互斥（2026-10-08 单例化后）
 
-设备锁与单 worker 执行器都是**进程内**的：同一台机器上若跑着多个 MCP 实例
-（不同客户端各起一个），它们之间**不互斥**——两个客户端可以同时对同一台仪器下发
-命令，`device_busy` 拦不住。本机实测曾同时存在多个 instrument 相关实例。
+设备锁（`_DEVICE_LOCK`）与单 worker 执行器都是**进程内**的 —— 本进程内是**全局串行**
+（不只是同一台仪器，是所有设备操作）。2026-10-08 起 `instruments` 默认以**常驻单例**
+运行，正常情况下全机只有**一个** MCP 进程，同一仪器不会并发。
 
+- 仍要警惕**多实例**：外部脚本、未切 remote 的旧客户端（DSH / zcode）、或手工起的
+  stdio 实例都各自成进程，**进程之间不互斥**，可同时操作同一仪器（响应串台）。
+- 排查（PowerShell）——看到**多于一个** `server.py` 实例就要查：
+  `Get-CimInstance Win32_Process -Filter "Name='python.exe'" | Where-Object { $_.CommandLine -match 'mcp_instruments' } | Select ProcessId,ParentProcessId,CreationDate`
+  多于一个通常说明有客户端没连单例（检查它的 MCP 配置是否 remote）。
 - 纪律：**同一台仪器同一时间只由一个客户端操作**；交接前先收尾（关输出/恢复设定/
   归还面板控制权）。
-- 排查（PowerShell）：
-  `Get-CimInstance Win32_Process | Where-Object { $_.CommandLine -match 'instrumentControl' } | Select ProcessId,CreationDate,CommandLine`
 
 ### 超时/卡死语义（所有工具一致）
 

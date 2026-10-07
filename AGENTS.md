@@ -239,7 +239,9 @@ AI/Agent 操作仪器必须遵守以下规范。
   健康检查走真实 MCP `initialize` 握手。进程内 `_DEVICE_LOCK` + 单 worker 已全局串行，
   单例后同仪器不会并发（`session_lock` 的跨进程告警对 stdio 外部脚本仍有效）。
   **注意**：`opencode mcp list` 不支持 `--global`（只读项目级配置），验证以"重启后在会话里
-  实际调用仪器工具"为准。
+  实际调用仪器工具"为准。**服务挂了由 Agent 自己拉起、不要问用户**：`run_remote.ps1 status`
+  看 `running`，为 false 就 `start`（幂等 + detached 进程，不依赖 shell 存活），然后重试工具调用；
+  详细判据与"别把设备问题当服务问题"的分辨表见 skill `instrument-mcp` →「MCP 服务不可用」。
 - **skill 的权威源在仓库 `skills/<name>/SKILL.md`**（如 `skills/instrument-mcp/SKILL.md`）：
   **不要**在 `~/.agents/skills/` 下另存一份副本——那里是 `scripts/install_skills.py`
   建的分发链接（junction），改哪边都是同一份文件。安装/检查/卸载用该脚本
