@@ -16,13 +16,15 @@
     回滚：不设 MCP_TRANSPORT 时 server.py 仍走 stdio；本脚本不改 OpenCode 配置。
 
 .PARAMETER Action
-    start（默认）| stop | restart | status
+    start（默认）| stop | restart | status | install-task | uninstall-task
 
 .PARAMETER Port
     监听端口。默认取环境变量 MCP_HTTP_PORT，再默认 8765。
 
 .PARAMETER PythonExe
-    python 解释器路径。默认探测：PATH 上的 python → py -3 → 报错。
+    python 解释器路径。默认探测：PATH 上的 python（排除商店存根）→
+    常见安装目录 `%LOCALAPPDATA%\Programs\Python\Python3*` / `%ProgramFiles%` / `C:\` → py launcher。
+    （计划任务环境 PATH 常不完整，故必须自带探测，不能只靠 Get-Command。）
 
 .PARAMETER TimeoutSec
     启动后等待健康检查的总秒数（默认 45；冷启动实测约 7 s）。
@@ -30,10 +32,11 @@
 .EXAMPLE
     pwsh -File run_remote.ps1 start
     pwsh -File run_remote.ps1 status
+    pwsh -File run_remote.ps1 install-task     # 注册"登录时启动"计划任务
 #>
 [CmdletBinding()]
 param(
-    [ValidateSet('start', 'stop', 'restart', 'status')]
+    [ValidateSet('start', 'stop', 'restart', 'status', 'install-task', 'uninstall-task')]
     [string]$Action = 'start',
     [int]$Port = 0,
     [string]$PythonExe = '',
@@ -66,6 +69,9 @@ function Resolve-Port {
 }
 
 function Resolve-Python {
+    <# 定位 python 解释器。
+       计划任务/服务环境常常没有用户 PATH，因此除 PATH 外还要探测常见安装位置
+       （与 opencode.json 里登记的路径同源）。 #>
     param([string]$Explicit)
     if ($Explicit) {
         if (-not (Test-Path -LiteralPath $Explicit)) { throw "python not found: $Explicit" }
@@ -73,9 +79,18 @@ function Resolve-Python {
     }
     $cmd = Get-Command python -ErrorAction SilentlyContinue
     if ($cmd) { return $cmd.Source }
-    $py = Get-Command py -ErrorAction SilentlyContinue
-    if ($py) { return $py.Source }   # py -3 launcher; caller passes exe only
-    throw "python interpreter not found; pass -PythonExe <path>"
+    $globs = @(
+        (Join-Path $env:LOCALAPPDATA 'Programs\Python\Python3*\python.exe'),
+        'C:\Python3*\python.exe',
+        (Join-Path $env:ProgramFiles 'Python3*\python.exe')
+    )
+    foreach ($g in $globs) {
+        $hit = Get-ChildItem -Path $g -ErrorAction SilentlyContinue |
+               Sort-Object FullName -Descending | Select-Object -First 1
+        if ($hit) { return $hit.FullName }
+    }
+    throw "python interpreter not found (checked PATH and common install dirs); " +
+          "pass -PythonExe <path>"
 }
 
 function Get-LivePid {
@@ -125,13 +140,16 @@ function Test-PortListening {
 }
 
 function Rotate-Log {
-    # 上一次运行的日志改名为 .prev.log（只保留一代，避免无限增长）
+    # 上一次运行的日志改名保留一代（stdout / stderr 各自一份），避免无限增长
     if (-not (Test-Path -LiteralPath $LogDir)) { New-Item -ItemType Directory -Path $LogDir -Force | Out-Null }
-    $prev = Get-ChildItem -LiteralPath $LogDir -Filter 'mcp_server_*.log' -ErrorAction SilentlyContinue |
-            Sort-Object LastWriteTime -Descending | Select-Object -First 1
-    if ($prev) {
-        $target = Join-Path $LogDir 'mcp_server.prev.log'
-        Move-Item -LiteralPath $prev.FullName -Destination $target -Force
+    foreach ($isErr in @($false, $true)) {
+        $latest = Get-ChildItem -LiteralPath $LogDir -Filter 'mcp_server_*.log' -ErrorAction SilentlyContinue |
+                  Where-Object { $_.BaseName -notlike '*prev*' -and ($_.Name -like '*.err.log') -eq $isErr } |
+                  Sort-Object LastWriteTime -Descending | Select-Object -First 1
+        if ($latest) {
+            $dest = if ($isErr) { 'mcp_server.prev.err.log' } else { 'mcp_server.prev.log' }
+            Move-Item -LiteralPath $latest.FullName -Destination (Join-Path $LogDir $dest) -Force
+        }
     }
 }
 
@@ -250,14 +268,48 @@ function Show-Status {
         addr    = $addr
         url     = if ($base) { "$base/mcp" } else { $null }
         log     = (Get-ChildItem -LiteralPath $LogDir -Filter 'mcp_server_*.log' -ErrorAction SilentlyContinue |
+                   Where-Object { $_.Name -notlike '*.err.log' -and $_.BaseName -notlike '*prev*' } |
                    Sort-Object LastWriteTime -Descending | Select-Object -First 1 -ExpandProperty FullName)
     } | ConvertTo-Json -Compress
     return
 }
 
+# ── 计划任务（仅"登录时启动"，本机 2026-10-08 决策）────────────────────
+$TaskName = 'instrumentControl-MCP-Server'
+
+function Install-Task {
+    <# 注册"登录时启动"计划任务：登录后自动跑本脚本的 start（幂等）。
+       只做登录触发，不做周期自愈 —— 如需自愈再加一个重复触发器即可。 #>
+    $pwshExe = (Get-Command pwsh -ErrorAction SilentlyContinue).Source
+    if (-not $pwshExe) { throw "pwsh 7 not found on PATH; install PowerShell 7 first" }
+    $action = New-ScheduledTaskAction -Execute $pwshExe `
+        -Argument "-NoProfile -NonInteractive -WindowStyle Hidden -File `"$PSCommandPath`" start"
+    $trigger = New-ScheduledTaskTrigger -AtLogOn -User "$env:USERDOMAIN\$env:USERNAME"
+    $settings = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries `
+        -DontStopIfGoingOnBatteries -StartWhenAvailable `
+        -ExecutionTimeLimit ([TimeSpan]::Zero)
+    Register-ScheduledTask -TaskName $TaskName -Action $action -Trigger $trigger `
+        -Settings $settings -Force `
+        -Description "instrumentControl MCP singleton (streamable-http 127.0.0.1:8765); start at logon via run_remote.ps1" |
+        Out-Null
+    Write-Host "scheduled task installed: $TaskName"
+    Write-Host "  trigger : at logon ($env:USERDOMAIN\$env:USERNAME)"
+    Write-Host "  run now : Start-ScheduledTask -TaskName '$TaskName'"
+    Write-Host "  remove  : pwsh -File run_remote.ps1 uninstall-task"
+}
+
+function Uninstall-Task {
+    $existing = Get-ScheduledTask -TaskName $TaskName -ErrorAction SilentlyContinue
+    if (-not $existing) { Write-Host "scheduled task not present: $TaskName"; return }
+    Unregister-ScheduledTask -TaskName $TaskName -Confirm:$false
+    Write-Host "scheduled task removed: $TaskName"
+}
+
 switch ($Action) {
-    'start'   { Start-Server -P (Resolve-Port) }
-    'stop'    { Stop-Server }
-    'restart' { Stop-Server; Start-Server -P (Resolve-Port) }
-    'status'  { Show-Status }
+    'start'          { Start-Server -P (Resolve-Port) }
+    'stop'           { Stop-Server }
+    'restart'        { Stop-Server; Start-Server -P (Resolve-Port) }
+    'status'         { Show-Status }
+    'install-task'   { Install-Task }
+    'uninstall-task' { Uninstall-Task }
 }
