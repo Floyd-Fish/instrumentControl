@@ -40,6 +40,15 @@ import typing
 from datetime import datetime
 from pathlib import Path
 
+# ── 运行环境预置：必须早于任何会拉起 numpy 的三方库 import ──────────────────
+# 根因（2026-10-08 实测，证据 TEST_DATA/common/mem_probe_pyvisa_*.json）：
+# pyvisa 1.16.2 的 `pyvisa/util.py` 在模块级 `import numpy`；本机 32 线程 CPU 上
+# numpy 2.3.5(scipy-openblas64) 初始化 OpenBLAS 线程池按 ~23 MB/线程 calloc →
+# `import pyvisa` 私有提交 +755 MB（驻留仅 ~20 MB）。MCP 进程内 numpy 只被
+# pyvisa 用来解 IEEE block 二进制，单线程完全够用 → 锁 1 线程后 +15 MB。
+# 用 setdefault 而非 set：允许启动方（计划任务 / OpenCode environment / 调试）覆盖。
+os.environ.setdefault("OPENBLAS_NUM_THREADS", "1")
+
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, ROOT)
 for sub in ("dh1766_control/src",):
@@ -2489,6 +2498,38 @@ import dg832_control  # noqa: E402,F401
 threading.Thread(target=_prewarm_visa_rm, daemon=True).start()
 
 
+def _run_server() -> None:
+    """按 `MCP_TRANSPORT` 环境变量选择传输方式（默认 stdio，行为与改动前一致）。
+
+    - `stdio`（默认，含未设置）：每个客户端一个子进程、由 OpenCode 自己拉起 —— 回滚路径；
+    - `streamable-http`：**常驻单例** HTTP 服务（多个客户端 / 项目共用一份进程），
+      监听 `MCP_HTTP_HOST`:`MCP_HTTP_PORT`（默认 127.0.0.1:8765，路径 /mcp）；
+    - 其它值：显式报错退出。**不做静默回退** —— 静默回退会把"配置写错"伪装成
+      "服务正常"，排查时极难定位；配置错误必须响亮。
+
+    默认只绑定回环地址；需要对外暴露要显式改 `MCP_HTTP_HOST`（并自担安全责任）。
+    """
+    transport = (os.environ.get("MCP_TRANSPORT") or "stdio").strip().lower()
+    if transport == "stdio":
+        mcp.run()
+        return
+    if transport != "streamable-http":
+        raise SystemExit(
+            f"unknown MCP_TRANSPORT={transport!r} "
+            "(expected 'stdio' or 'streamable-http')")
+    host = os.environ.get("MCP_HTTP_HOST", "127.0.0.1")
+    try:
+        port = int(os.environ.get("MCP_HTTP_PORT", "8765"))
+    except ValueError as exc:
+        raise SystemExit(f"invalid MCP_HTTP_PORT: {exc}") from exc
+    mcp.settings.host = host
+    mcp.settings.port = port
+    print(f"[instrumentControl] transport=streamable-http "
+          f"listening on http://{host}:{port}{mcp.settings.streamable_http_path}",
+          file=sys.stderr, flush=True)
+    mcp.run(transport="streamable-http")
+
+
 if __name__ == "__main__":
     # 启动自检（P0-1③，docs/tool_optimization_20260915.md）：把"查询式判据"的实测结果
     # 打一行到 **stderr**。历史事故：磁盘代码已改、跑着的进程仍是旧规则，调用方被误导为
@@ -2530,4 +2571,4 @@ if __name__ == "__main__":
         print("[instrumentControl] tool metadata self-check skipped: "
               f"{type(e).__name__}: {ascii(e)}",
               file=sys.stderr, flush=True)
-    mcp.run()
+    _run_server()

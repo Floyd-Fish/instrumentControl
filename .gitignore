@@ -39,3 +39,7 @@ docs/DEVICE_FACTS.local.md
 # 可由设备重建。上面的精细规则保留（对存量已追踪文件仍是 no-op）。
 # 若确需留档某份证据，用 git add -f 显式加。
 TEST_DATA/
+
+# MCP 单例服务的运行期状态（pid/addr/日志）：机器相关、每次重启即变，不入库。
+# 由 mcp_instruments/run_remote.ps1 自动管理（start 幂等、stop 清理）。
+mcp_instruments/run/
