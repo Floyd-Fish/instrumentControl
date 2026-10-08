@@ -488,3 +488,25 @@
   - 新增工具：`TEST_SCRIPTS/common/mcp_call_tool_20261008.py`（通用单工具调用器）、
     `verify_mcp_device_acceptance_20261008.py`（批量只读验收）；证据
     `TEST_DATA/common/mcp_device_acceptance_*.json`。
+
+- 2026-10-08（3458A 前板交接三件套：snapshot / restore / release）：
+  - **现场问题**：脚本用完 3458A 后面板停在 **MRNG + 冻结读数**。查手册：MRNG =
+    manual range 指示符（非自动挡时点亮），不是故障；冻结是 `TARM SGL,1` 单次触发
+    后自动回 HOLD + `close()` 再补 `TARM HOLD` 的叠加。另实测 **RESET 不复位 TARM**
+    （复位前后 TARM?=4，与本地命令文档说法不符——文档待补这条）。
+  - **设计裁定（触发态 vs 测量配置分开处置）**：触发态（TARM/TRIG）决定面板死活
+    → 交还时**无条件 AUTO**（开始前若是上次烂尾的 HOLD，"按原样恢复"会把坏状态
+    永久化）；测量配置（FUNC/RANGE/NPLC/ARANGE/AZERO）承载用户特意设置 → **快照
+    还原**（snapshot → 测量 → restore 配对）。
+  - **落地**：`DMM3458A.snapshot_config()/restore_config()/release_to_front_panel()`；
+    `close(release=True)` 新分支；`commands.TARM_AUTO` 常量补齐；worker 白名单 +3；
+    MCP 工具 `ks3458a_snapshot`（read_only）/`ks3458a_restore`（config）/
+    `ks3458a_release`（config）——**工具数 68 → 71**（基线已重固化）；
+    skill 新增「3458A 脚本收尾规范」节。
+  - **校验脚本自身修正**：`verify_compact_profile` 两处硬编码 68 → ≥68（新工具入表
+    即涨）；schema 审计白名单 +`additionalProperties`（FastMCP 对 dict 参数生成，
+    validator 忽略式支持）。
+  - 验证：`verify_front_panel_release_offline`（新，mock transport）10/10；
+    parity / compact_profile / broker_offline / tools_meta 全 PASS。
+  - 待办：远程机（TS-ASTATION）的 keysight_3458a 子集**尚未同步**这套收尾方法——
+    下次远程用 3458A 前先同步（或直接在远程跑现库+手动 TARM AUTO）。

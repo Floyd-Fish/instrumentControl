@@ -1,12 +1,12 @@
 {
-  "captured_at": "2026-10-08T18:49:57",
+  "captured_at": "2026-10-08T23:26:40",
   "server": "mcp_instruments\\server.py",
   "server_info": {
     "name": "instruments",
     "version": "1.27.0"
   },
   "protocol_version": "2024-11-05",
-  "tool_count": 68,
+  "tool_count": 71,
   "tools": [
     {
       "name": "dg_check_error",
@@ -1983,6 +1983,41 @@
       }
     },
     {
+      "name": "ks3458a_release",
+      "description": "3458A 交还前面板：`TARM AUTO`+`TRIG AUTO`（面板连续刷新）+`ARANGE ON`（灭 MRNG）。\n\n    治\"脚本测完面板停在 MRNG + 冻结读数\"（2026-10-08 现场）：单次读数配方\n    `TARM SGL,1` 触发一次后自动回 HOLD，`close()` 又会补 `TARM HOLD`——面板从此\n    不刷新，用户以为仪器坏了。\n\n    参数 `mode`：\n    - `release`（默认）：无条件 AUTO（触发态**不**按开始状态恢复——开始前若是上次\n      烂尾的 HOLD，恢复回去等于把坏状态永久化）；\n    - `snapshot`：先取**测量配置**快照（FUNC/RANGE/NPLC/ARANGE/AZERO），只返回不改动\n      ——配 `restore` 用；\n    - `restore`：按 `snapshot` 的结果还原测量配置，再把触发态设回 AUTO。\n\n    ⚠ 调用后**不要再读数**（单次触发会把 TARM 打回 HOLD）——它是收尾动作。\n    ",
+      "inputSchema": {
+        "properties": {
+          "resource": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Resource"
+          }
+        },
+        "title": "ks3458a_releaseArguments",
+        "type": "object"
+      },
+      "outputSchema": {
+        "properties": {
+          "result": {
+            "title": "Result",
+            "type": "string"
+          }
+        },
+        "required": [
+          "result"
+        ],
+        "title": "ks3458a_releaseOutput",
+        "type": "object"
+      }
+    },
+    {
       "name": "ks3458a_reset",
       "description": "3458A 复位：`RESET` + `END ALWAYS` + `INBUF ON`。\n\n    ⚠ **破坏性**：回到**开机测量配置**——档位/NPLC/功能/内存/触发等一并复位。\n    必须 confirm=True。\n\n    这是本库**唯一**的重置入口：MCP 连接默认 `reset_on_open=False`，**不会**每次调用\n    偷偷复位仪表。`END ALWAYS`/`INBUF ON` 是 `TARM SGL` 单次读数配方的前置条件——\n    缺了会把 GPIB 总线占住。完整影响范围见 skill instrument-mcp。\n    ",
       "inputSchema": {
@@ -2019,6 +2054,94 @@
           "result"
         ],
         "title": "ks3458a_resetOutput",
+        "type": "object"
+      }
+    },
+    {
+      "name": "ks3458a_restore",
+      "description": "3458A 收尾三合一（脚本 try/finally 的标准收尾）：测量配置按快照还原 →\n    触发态无条件 AUTO（面板连续刷新）→ ARANGE 视参数（默认 ON 灭 MRNG）。\n\n    `snap` 传 `ks3458a_snapshot` 返回的 `result`（省略则跳过配置还原，只做释放）。\n    返回 `issues`（回读不符项，不抛错——收尾尽力而为）。\n    ⚠ 调用后不要再读数（单次触发会把 TARM 打回 HOLD）。",
+      "inputSchema": {
+        "properties": {
+          "snap": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Snap"
+          },
+          "arange_on": {
+            "default": true,
+            "title": "Arange On",
+            "type": "boolean"
+          },
+          "resource": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Resource"
+          }
+        },
+        "title": "ks3458a_restoreArguments",
+        "type": "object"
+      },
+      "outputSchema": {
+        "properties": {
+          "result": {
+            "title": "Result",
+            "type": "string"
+          }
+        },
+        "required": [
+          "result"
+        ],
+        "title": "ks3458a_restoreOutput",
+        "type": "object"
+      }
+    },
+    {
+      "name": "ks3458a_snapshot",
+      "description": "3458A **测量配置**快照（FUNC/RANGE/NPLC/ARANGE/AZERO；**不含触发态**），只读。\n\n    与 `ks3458a_restore` 配对：脚本开始前 snapshot → 测量 → restore（配置按快照\n    还原 + 触发态回 AUTO 面板刷新）。触发态不属于快照——它决定面板死活，无条件\n    AUTO（开始前若是上次烂尾的 HOLD，恢复回去等于把坏状态永久化）。",
+      "inputSchema": {
+        "properties": {
+          "resource": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Resource"
+          }
+        },
+        "title": "ks3458a_snapshotArguments",
+        "type": "object"
+      },
+      "outputSchema": {
+        "properties": {
+          "result": {
+            "title": "Result",
+            "type": "string"
+          }
+        },
+        "required": [
+          "result"
+        ],
+        "title": "ks3458a_snapshotOutput",
         "type": "object"
       }
     },

@@ -47,6 +47,7 @@ ALLOWED_METHODS = {
     "idn", "state", "error_string", "temperature",
     "read_dcv", "read_avg", "read_stats", "read_series", "read_acv", "read_burst",
     "configure_dcv", "set_range", "set_autorange", "set_nplc", "configure_acv",
+    "snapshot_config", "restore_config", "release_to_front_panel",
     "reset", "unstick", "write", "query",
 }
 ALLOWED_ATTRS = {"current_nplc", "current_range", "resource", "holders",

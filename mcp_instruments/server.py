@@ -2083,6 +2083,59 @@ def ks3458a_unstick(confirm: bool = False, resource: str | None = None) -> str:
     return _call("3458A", lambda: _ks3458a(resource, timeout_s=60.0), fn)
 
 
+@device_tool()
+def ks3458a_release(resource: str | None = None) -> str:
+    """3458A 交还前面板：`TARM AUTO`+`TRIG AUTO`（面板连续刷新）+`ARANGE ON`（灭 MRNG）。
+
+    治"脚本测完面板停在 MRNG + 冻结读数"（2026-10-08 现场）：单次读数配方
+    `TARM SGL,1` 触发一次后自动回 HOLD，`close()` 又会补 `TARM HOLD`——面板从此
+    不刷新，用户以为仪器坏了。
+
+    参数 `mode`：
+    - `release`（默认）：无条件 AUTO（触发态**不**按开始状态恢复——开始前若是上次
+      烂尾的 HOLD，恢复回去等于把坏状态永久化）；
+    - `snapshot`：先取**测量配置**快照（FUNC/RANGE/NPLC/ARANGE/AZERO），只返回不改动
+      ——配 `restore` 用；
+    - `restore`：按 `snapshot` 的结果还原测量配置，再把触发态设回 AUTO。
+
+    ⚠ 调用后**不要再读数**（单次触发会把 TARM 打回 HOLD）——它是收尾动作。
+    """
+
+    def fn(d: DMM3458A):
+        return {"released": True, "issues": d.release_to_front_panel()}
+    return _call("3458A", lambda: _ks3458a(resource, timeout_s=30.0), fn)
+
+
+@device_tool()
+def ks3458a_snapshot(resource: str | None = None) -> str:
+    """3458A **测量配置**快照（FUNC/RANGE/NPLC/ARANGE/AZERO；**不含触发态**），只读。
+
+    与 `ks3458a_restore` 配对：脚本开始前 snapshot → 测量 → restore（配置按快照
+    还原 + 触发态回 AUTO 面板刷新）。触发态不属于快照——它决定面板死活，无条件
+    AUTO（开始前若是上次烂尾的 HOLD，恢复回去等于把坏状态永久化）。"""
+
+    def fn(d: DMM3458A):
+        return d.snapshot_config()
+    return _call("3458A", lambda: _ks3458a(resource, timeout_s=30.0), fn)
+
+
+@device_tool()
+def ks3458a_restore(snap: dict | None = None, arange_on: bool = True,
+                    resource: str | None = None) -> str:
+    """3458A 收尾三合一（脚本 try/finally 的标准收尾）：测量配置按快照还原 →
+    触发态无条件 AUTO（面板连续刷新）→ ARANGE 视参数（默认 ON 灭 MRNG）。
+
+    `snap` 传 `ks3458a_snapshot` 返回的 `result`（省略则跳过配置还原，只做释放）。
+    返回 `issues`（回读不符项，不抛错——收尾尽力而为）。
+    ⚠ 调用后不要再读数（单次触发会把 TARM 打回 HOLD）。"""
+
+    def fn(d: DMM3458A):
+        issues = d.restore_config(snap) if snap else []
+        issues += d.release_to_front_panel(arange=arange_on)
+        return {"restored": True, "issues": issues}
+    return _call("3458A", lambda: _ks3458a(resource, timeout_s=45.0), fn)
+
+
 # ============ DHO 示波器 ============
 
 @device_tool()

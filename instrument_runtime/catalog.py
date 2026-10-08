@@ -131,6 +131,11 @@ RISK_BY_TOOL: dict[str, str] = {
     "ks3458a_acv": _CONFIG,
     "ks3458a_reset": _DESTRUCTIVE,
     "ks3458a_unstick": _DESTRUCTIVE,  # 真实 IFC 复位，解 GPIB 卡死
+    # 前板交接三件套（2026-10-08）：snapshot 只读；restore/release 改触发态与
+    # （可选）配置——属收尾动作，不破坏测量数据，定 config 而非 destructive。
+    "ks3458a_snapshot": _READ_ONLY,
+    "ks3458a_restore": _CONFIG,
+    "ks3458a_release": _CONFIG,
     # ---- 通用零代码接入（3）----
     "instr_discover": _READ_ONLY,
     "instr_query": _READ_ONLY,       # 原始 SCPI 查询通道

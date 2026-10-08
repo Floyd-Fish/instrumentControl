@@ -98,7 +98,8 @@ def main() -> int:
 
     # ---------------- S2 能力不丢 ----------------
     print("\nS2 all 68 operations remain available in the registry")
-    check("registry holds 68 operations regardless of profile", len(reg) == 68, f"{len(reg)}")
+    check("registry holds all registered operations regardless of profile",
+          len(reg) >= 68, f"{len(reg)}（≥68：新工具入表即涨，硬编码会误报）")
     check("registry is not profile-dependent (server registered legacy too)",
           len(reg.by_device()) == 10, f"{len(reg.by_device())} device families")
 
@@ -106,7 +107,11 @@ def main() -> int:
     seen: set[str] = set()
     for op in reg:
         seen |= schema_constructs(op.schema)
-    allowed = {"type", "properties", "required", "title", "default", "anyOf", "items", "enum"}
+    allowed = {"type", "properties", "required", "title", "default", "anyOf", "items", "enum",
+               # additionalProperties：FastMCP 对 `dict` 参数生成（默认 {}——任意键值）。
+               # validator 的 _accepts 对 object 类型只查 isinstance(dict)、不管内层键，
+               # 该关键字自然被"忽略式支持"。2026-10-08 ks3458a_restore(snap: dict) 首次用到。
+               "additionalProperties"}
     check("schema constructs stay inside the validator's coverage",
           seen <= allowed, f"unexpected: {sorted(seen - allowed)}")
     check("validator covers all five primitive types",
@@ -148,7 +153,8 @@ def main() -> int:
     devs = r.get("devices") or {}
     total = sum(len(v) for v in devs.values())
     check("empty query returns the full capability catalog",
-          r.get("mode") == "catalog" and total == 68, f"total={total} devices={len(devs)}")
+          r.get("mode") == "catalog" and total >= 68,
+          f"total={total} devices={len(devs)}（≥68：新工具入表即涨）")
     check("catalog groups by device family and lists op ids only",
           all(isinstance(v, list) and all("." in i for i in v) for v in devs.values()),
           str(sorted(devs)[:4]))

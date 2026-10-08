@@ -264,13 +264,21 @@ class DMM3458A:
         transport.write(C.TRIG_AUTO)
         time.sleep(0.2)
 
-    def close(self) -> None:
-        """关会话。先尽力把触发挂起（`TARM HOLD`），不把表留在"等待触发"的悬空态。"""
+    def close(self, *, release: bool = False) -> None:
+        """关会话。`release=True` 时先 `release_to_front_panel()`（面板连续刷新）。
+
+        默认仍发 `TARM HOLD`（本会话还要继续远程读的保守收尾）；但**脚本最后一次
+        用完仪器**应显式 `release=True`（或先调 `release_to_front_panel()` 再 close），
+        否则面板停在冻结读数 + MRNG（2026-10-08 现场教训）。
+        """
         transport = self._transport
         if transport is None:
             return
         try:
-            transport.write(C.TARM_HOLD)
+            if release:
+                self.release_to_front_panel()
+            else:
+                transport.write(C.TARM_HOLD)
         except Exception:                            # noqa: BLE001 —— 收尾尽力而为
             pass
         try:
@@ -547,6 +555,106 @@ class DMM3458A:
         transport.write(C.ARANGE_ON if on else C.ARANGE_OFF)
         self._autorange = bool(on)
         time.sleep(0.2)
+
+    # ---------- 前板交接（snapshot / release / restore） ----------
+
+    def snapshot_config(self) -> dict:
+        """**测量配置**快照（FUNC/RANGE/NPLC/ARANGE/AZERO——不含触发态）。
+
+        用途：`release_to_front_panel()` / `restore_config()` 配对——脚本开始前快照，
+        结束后按快照还原**测量配置**，再把触发态无条件设回 AUTO（面板持续刷新）。
+
+        为什么**不含** TARM/TRIG：触发态决定"面板是否刷新"，属于交接态而非用户
+        设置——开始前若是上次烂尾的 HOLD，恢复回去等于把坏状态永久化（2026-10-08
+        现场正是这样）。两类状态的处置见 `release_to_front_panel` 的设计说明。
+        """
+        t = self._t()
+
+        def q(cmd: str):
+            try:
+                return t.query(cmd)
+            except Exception:                        # noqa: BLE001
+                return None
+
+        def _num(raw, conv=float):
+            if raw is None:
+                return None
+            try:
+                return conv(str(raw).strip())
+            except Exception:                        # noqa: BLE001
+                return None
+
+        func_raw = q(C.FUNC_Q)
+        return {
+            "function": func_raw,                    # '1, .1' = DCV + max_input
+            "range_v": _num(q(C.RANGE_Q)),
+            "nplc": _num(q(C.NPLC_Q)),
+            "arange": _num(q(C.ARANGE_Q), int),      # 1=ON / 0=OFF（只信这条，见 state()）
+            "azero": _num(q(C.AZERO_Q), int),        # 0=OFF / 1=ON / 2=ONCE
+        }
+
+    def restore_config(self, snap: dict, *, verify: bool = True) -> list[str]:
+        """按 `snapshot_config()` 的快照还原**测量配置**（失败项记入返回的 issues 列表）。
+
+        触发态不在还原范围（保持当前值）——需要面板刷新用 `release_to_front_panel()`。
+        `None` 字段跳过（快照时该项查询失败，宁可不写也不猜）。
+        """
+        if not isinstance(snap, dict):
+            raise ValueError("restore_config 需要 snapshot_config() 返回的 dict")
+        t = self._t()
+        issues: list[str] = []
+        if snap.get("range_v") is not None:
+            t.write(f"{C.DCV} {C.fmt_num(float(snap['range_v']))}")
+        if snap.get("nplc") is not None:
+            t.write(f"{C.NPLC} {C.fmt_num(float(snap['nplc']))}")
+        if snap.get("azero") is not None:
+            az = int(snap["azero"])
+            t.write(f"AZERO {'ON' if az == 1 else 'OFF'}")   # ONCE(2) 不还原（一次性动作）
+        if snap.get("arange") is not None:
+            t.write(C.ARANGE_ON if int(snap["arange"]) == 1 else C.ARANGE_OFF)
+        time.sleep(0.3)
+        if verify:
+            after = self.snapshot_config()
+            for key in ("range_v", "nplc", "arange"):
+                want, got = snap.get(key), after.get(key)
+                if want is not None and got is not None and abs(float(want) - float(got)) > 1e-9:
+                    issues.append(f"{key}: 期望 {want} 实测 {got}")
+        self._range = snap.get("range_v")
+        self._nplc = snap.get("nplc")
+        return issues
+
+    def release_to_front_panel(self, *, arange: bool = True) -> list[str]:
+        """把仪器交还前面板：触发态无条件回 AUTO（面板连续刷新），ARANGE 可选。
+
+        设计裁定（2026-10-08，治"测完面板停在 MRNG+冻结读数"）：
+        * **触发态（TARM/TRIG）无条件 AUTO**——它决定面板死活；开始前若是 HOLD，
+          "按开始状态恢复"会把坏状态永久化，所以触发态不属于快照范围；
+        * **ARANGE 默认 ON**：MRNG（manual range）指示符只在非自动挡时点亮——
+          多数场景用户要的是"面板正常显示"，固定档属于特意配置，由
+          snapshot/restore_config 那条链负责，不在这里。
+        * 返回 issues（ARANGE 回读不符等），**不因面板态问题抛错**——收尾尽力而为。
+
+        发送序列：`TARM AUTO` + `TRIG AUTO`（+ 可选 `ARANGE ON`）。
+        注意：发完**不要**再调 `read_dcv()`——单次触发会把 TARM 打回 HOLD。
+        """
+        t = self._t()
+        t.write(C.TARM_AUTO)
+        t.write(C.TRIG_AUTO)
+        if arange:
+            t.write(C.ARANGE_ON)
+        time.sleep(0.2)
+        issues: list[str] = []
+        try:
+            st = self.state()
+            if str(st.get("tarm", "")).startswith("4"):
+                issues.append(f"tarm 仍 HOLD: {st.get('tarm')}")
+            if str(st.get("trig", "")).startswith("4"):
+                issues.append(f"trig 仍 HOLD: {st.get('trig')}")
+            if arange and str(st.get("arange", "")).startswith("0"):
+                issues.append(f"arange 仍 OFF: {st.get('arange')}")
+        except Exception as e:                        # noqa: BLE001 —— 回读失败只记录
+            issues.append(f"回读失败: {type(e).__name__}: {e}")
+        return issues
 
     def set_nplc(self, nplc: float) -> None:
         """只改积分时间（`NPLC <n>`），不动档位。

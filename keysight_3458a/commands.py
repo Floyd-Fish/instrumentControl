@@ -104,6 +104,8 @@ PRESET_NORM = "PRESET NORM"      # [MANUAL] p.217：退出数字档回"正常远
 # 触发模型
 # ---------------------------------------------------------------------------
 TARM_HOLD = "TARM HOLD"          # [SICL] L318 —— 停止后续触发（free-run 的第一道闸）
+TARM_AUTO = "TARM AUTO"          # [MANUAL] p.251（码 1）—— 连续触发，前面板持续刷新读数
+                                 #   release_to_front_panel() 的收尾用；2026-10-08 引入
 TARM_SGL_1 = "TARM SGL,1"        # [SICL] L370；[VISA] L615 —— 触发**一次**读数并回值
 TARM_SYN = "TARM SYN"            # [SAMPLE] L64 —— 同步触发：进入等待，由后续事件/读数取走
 TRIG_HOLD = "TRIG HOLD"          # [SICL] L319；[SAMPLE2] L48 —— 触发源保持（不自动重触发）

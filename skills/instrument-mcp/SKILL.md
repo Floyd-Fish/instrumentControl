@@ -331,8 +331,30 @@ DG832 信号源（RIGOL DG800 系列）：
   `cidr`。
 - 只有通用工具 `instr_query` / `instr_write` 必须显式给 `resource`（面向任意设备，不能猜）。
 
-### 3458A 的两条通路怎么配（`kind=ks3458a`）
+### 3458A 脚本收尾规范：`ks3458a_snapshot` → 测量 → `ks3458a_restore`（2026-10-08 定）
 
+**为什么**：单次读数配方 `TARM SGL,1` 触发一次后自动回 HOLD，`close()` 还会补
+`TARM HOLD`——脚本测完前面板就停在 **MRNG + 冻结读数**（用户以为仪器坏了）。
+MRNG = manual range 指示符（手册：不在自动挡时点亮），不是故障。
+
+**标准三步**（try/finally）：
+
+```
+1. 开始前  ks3458a_snapshot()          # 测量配置快照（FUNC/RANGE/NPLC/ARANGE/AZERO）
+2. ...测量...（read/configure/set_range 随意）
+3. finally ks3458a_restore(snap=<第1步的 result>)
+          # 配置按快照还原 + 触发态无条件 AUTO（面板连续刷新）+ ARANGE ON（灭 MRNG）
+```
+
+设计裁定——**为什么触发态不按开始状态恢复**：开始前若是上次烂尾的 HOLD，
+"按原样恢复"会把坏状态永久化（2026-10-08 现场正是这样）。触发态决定面板死活，
+属交接态而非用户设置 → 无条件 AUTO；**测量配置**（特意设置的档位/NPLC）才走快照还原。
+
+一次性的快速交还（不想快照）：`ks3458a_release`。脚本侧直连库等价物：
+`d.snapshot_config()` / `d.restore_config(snap)` / `d.release_to_front_panel()`；
+`d.close(release=True)`。⚠ 释放后**不要再读数**（单次触发会把 TARM 打回 HOLD）。
+
+### 3458A 的两条通路怎么配（`kind=ks3458a`）
 3458A 挂在 GPIB 上，**不是 LAN 设备**（扫网段对它没有意义）。通路按资源串自动选：
 
 | 通路 | 配置值 | 何时用 |
