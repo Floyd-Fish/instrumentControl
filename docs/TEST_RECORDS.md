@@ -530,3 +530,7 @@
     重跑成功：pid=6480、登录计划任务已注册。
   - **真机验证**：走远程单例 `instr_call ks3458a.status` → **HP3458A 在线**，
     `tarm=1(AUTO)`（10-08 面板修复后状态保持）、10V 档、NPLC=10。
+  - **坑 #9 复现与正解**：WinRM 会话内 `run_remote.ps1 start` 起的服务**随会话回收被杀**
+    （即使 DETACHED；BREAKAWAY 被拒 → 降级标志挡不住 Job 清理）。正解 =
+    `Start-ScheduledTask instrumentControl-MCP-Server`（任务上下文独立，跨会话存活
+    已验证）。已记入 skill `winrm-remote-workstation`。
