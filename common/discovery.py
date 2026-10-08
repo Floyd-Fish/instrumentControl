@@ -18,6 +18,7 @@ import asyncio
 import ipaddress
 import json
 import os
+import re
 import socket
 import subprocess
 import sys
@@ -25,6 +26,7 @@ import threading
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Callable, Optional
 
 import pyvisa
@@ -43,17 +45,19 @@ PROBE_ALIVE_CONCURRENCY = 256
 # 分块后峰值内存与块大小成正比（2026-09-16 实机踩到，见 probe_open_ports）。
 PROBE_CHUNK = 2048
 
-# 串口探测挂起硬超时（驱动层 open 可能不受 open_timeout 约束）。
-# 实测（9 口）：并发 8 会让子进程互相争抢串口资源、多数误报超时；并发 4 正常。
+# 串口探测的超时（2026-09-23 两轮收紧：8.0 → 2.0；内层 500ms）。
 #
-# 取值依据（2026-09-23 由 8.0 收紧到 2.0）：这个上限只该覆盖"子进程正常走完一趟"
-# 的开销 —— 解释器启动 + pyvisa import + open + `*IDN?` query，实测正常口约 1.4s。
-# 真正留给"设备响应"的时间很少：`*IDN?` 响应最长约 100 字节，按**最慢 4800 baud**
-# 也只有 100×10/4800 ≈ 0.21s（见 `_SERIAL_PROBE_SCRIPT` 的读超时）。
-# 旧值 8.0s 是为"驱动挂起"留的，但挂起口是靠子进程 kill 收场的，并不靠这个上限
-# 变成成功——8s 只是让每个挂起口白等 8s：本机 5 个挂起口 × 8s ÷ 4 workers ≈ 10s
-# （2026-09-23 实测串口段 16.6s，其中绝大部分就是这笔空等）。
+# 取值依据（合并双方 2026-09-23 各自实测后收敛到同一组值）：
+# * 外层（hard_timeout_s，连子进程一起杀）：只该覆盖"子进程正常走完一趟"的开销
+#   —— 解释器启动（Windows 约 0.3~0.5s）+ pyvisa import + open + `*IDN?` query，
+#   实测正常口约 1.4s；挂起口靠子进程 kill 收场，不靠这个上限变成成功。旧值 8s
+#   只是让每个挂起口白等（本机 5 个挂起口 × 8s ÷ 4 workers ≈ 10s）。
+# * 内层（open_timeout / VISA timeout 500ms）：`*IDN?` 响应最长约 100 字节，按
+#   **最慢 4800 baud** 也只有 100×10/4800 ≈ 0.21s，500ms 余量充足。
+# 两个值都可用环境变量覆盖（接真实串口仪器且响应慢时调大）。
 SERIAL_PROBE_TIMEOUT_S = 2.0
+SERIAL_PROBE_OPEN_TIMEOUT_MS = 500
+SERIAL_PROBE_VISA_TIMEOUT_MS = 500
 
 # 本进程内探测挂起的串口：后续发现跳过，避免每轮重复空等（子进程隔离已保证
 # 不会污染本进程，这里纯粹是速度优化）。显式重新发现用 forget_hanging_ports() 清空。
@@ -77,12 +81,12 @@ def forget_hanging_ports() -> None:
 _SERIAL_PROBE_SCRIPT = r'''
 import json, sys
 import pyvisa
-res, timeout_ms = sys.argv[1], int(sys.argv[2])
+res, timeout_ms, open_ms = sys.argv[1], int(sys.argv[2]), int(sys.argv[3])
 out = {"resource": res, "idn": None, "note": None}
 rm = None
 try:
     rm = pyvisa.ResourceManager()
-    inst = rm.open_resource(res, open_timeout=1000)
+    inst = rm.open_resource(res, open_timeout=open_ms)
     inst.timeout = timeout_ms
     inst.write_termination = "\n"
     inst.read_termination = "\n"
@@ -109,14 +113,16 @@ print(json.dumps(out, ensure_ascii=False))
 '''
 
 
-def probe_serial_isolated(resource: str, timeout_ms: int = 500,
-                          hard_timeout_s: float = SERIAL_PROBE_TIMEOUT_S) -> dict:
+def probe_serial_isolated(resource: str, timeout_ms: int = SERIAL_PROBE_VISA_TIMEOUT_MS,
+                          hard_timeout_s: float = SERIAL_PROBE_TIMEOUT_S,
+                          open_timeout_ms: int = SERIAL_PROBE_OPEN_TIMEOUT_MS) -> dict:
     """在**子进程**里探测一个串口，超时即杀。返回 {resource,idn,note}。
 
     这是唯一安全的串口探测方式——详见 `_SERIAL_PROBE_SCRIPT` 上方说明
     （本进程线程探测会留下卡死线程，导致后续任何 VISA 调用令进程崩溃）。
     """
-    cmd = [sys.executable, "-c", _SERIAL_PROBE_SCRIPT, resource, str(int(timeout_ms))]
+    cmd = [sys.executable, "-c", _SERIAL_PROBE_SCRIPT, resource,
+           str(int(timeout_ms)), str(int(open_timeout_ms))]
     try:
         p = subprocess.run(cmd, capture_output=True, text=True, timeout=hard_timeout_s,
                            encoding="utf-8", errors="replace")
@@ -137,13 +143,13 @@ def probe_serial_isolated(resource: str, timeout_ms: int = 500,
     return {"resource": resource, "idn": None, "note": "子进程无有效输出"}
 
 
-def probe_serials_isolated(resources: list[str], timeout_ms: int = 500,
+def probe_serials_isolated(resources: list[str], timeout_ms: int = SERIAL_PROBE_VISA_TIMEOUT_MS,
                            hard_timeout_s: float = SERIAL_PROBE_TIMEOUT_S,
                            workers: int = 4) -> list[dict]:
     """并行探测多个串口（每个一口子进程），保持入参顺序返回。
 
-    已确认挂起的口（`_HANGING_PORTS`）直接跳过返回占位结果——省下每轮 8s×N 的
-    空等（实测 9 口中 4 个挂起，全量 55s → 跳过挂起口后约 10s）。子进程隔离
+    已确认挂起的口（`_HANGING_PORTS`）直接跳过返回占位结果——省下每轮的空等
+    （实测 9 口中 4 个挂起，全量 55s → 跳过挂起口后约 10s）。子进程隔离
     已保证挂起口不会污染本进程，缓存只是加速；`forget_hanging_ports()` 可清空。
     """
     if not resources:
@@ -415,6 +421,55 @@ def local_cidrs(max_prefix: int = 16) -> list[str]:
     return seen
 
 
+def excluded_cidrs() -> list[str]:
+    """用户配置的「不要扫」网段（**只影响扫描范围，不影响地址解析**）。
+
+    来源（后者补充前者）：
+      * 环境变量 `INSTRUMENT_EXCLUDE_CIDRS`（逗号/分号分隔）
+      * 配置目录 `devices.json` 的 `exclude_cidrs` 数组
+
+    动机（2026-09-23 实测）：本机同时挂着公司网与仪器网，`local_cidrs()` 会返回
+    两个 /16（合计 131,830 台主机），而仪器根本不在公司网那一侧——每轮白扫数分钟，
+    期间还占着执行器 BUSY。排除后扫描范围只留真正可能有仪器的网段。
+
+    已配置（devices.json）与已缓存（last_good_resources.json）的地址**不受影响**：
+    排除只作用在"自动扫描"这一步。
+    """
+    out: list[str] = []
+    raw = os.environ.get("INSTRUMENT_EXCLUDE_CIDRS", "")
+    for part in re.split(r"[,;]", raw):
+        part = part.strip()
+        if part:
+            out.append(part)
+    try:
+        from .resolver import CONFIG_DIR  # noqa: PLC0415  （同包，避免import期循环）
+        cfg = _load_json_quiet(Path(CONFIG_DIR) / "devices.json")
+        for part in (cfg.get("exclude_cidrs") or []):
+            if isinstance(part, str) and part.strip():
+                out.append(part.strip())
+    except Exception:
+        pass
+    seen: list[str] = []
+    for c in out:
+        try:
+            norm = str(ipaddress.ip_network(c, strict=False))
+        except ValueError:
+            continue                                  # 写错的项忽略，不让它拖垮扫描
+        if norm not in seen:
+            seen.append(norm)
+    return seen
+
+
+def _load_json_quiet(path: "Path") -> dict:
+    """读 JSON，任何异常都返回空 dict（配置读不到不该影响扫描）。"""
+    try:
+        with open(path, encoding="utf-8") as f:
+            data = json.load(f)
+        return data if isinstance(data, dict) else {}
+    except Exception:
+        return {}
+
+
 def local_scan_segments(cidrs: Optional[list[str]] = None) -> list[str]:
     """把 `local_cidrs()` 的结果排成**由窄到宽**的扫描顺序（近邻 /24 优先）。
 
@@ -423,8 +478,25 @@ def local_scan_segments(cidrs: Optional[list[str]] = None) -> list[str]:
     就在与 PC **同一个 /24** 里。先扫近邻 /24（~5s）命中即返回，未命中才放宽到
     整个网段，兼顾"常见情形快"与"宽网段不漏"。显式传入 `cidrs` 时原样返回
     （调用方自己指定了范围，不要替他改）。
+
+    另外**剔除 `excluded_cidrs()` 里配置的网段**（2026-09-23 加）：公司网/Tailscale
+    那一侧不会有仪器，扫它纯属浪费（本机因此每轮白扫两个 /16）。
     """
     nets = list(cidrs) if cidrs else local_cidrs()
+    excl: list[ipaddress.IPv4Network] = []
+    for c in excluded_cidrs():
+        try:
+            excl.append(ipaddress.ip_network(c, strict=False))
+        except ValueError:
+            continue
+
+    def _excluded(net_str: str) -> bool:
+        try:
+            n = ipaddress.ip_network(net_str, strict=False)
+        except ValueError:
+            return False
+        return any(n.subnet_of(e) for e in excl)
+
     out: list[str] = []
     for net in nets:
         try:
@@ -432,15 +504,15 @@ def local_scan_segments(cidrs: Optional[list[str]] = None) -> list[str]:
         except ValueError:
             continue
         if network.prefixlen >= 24:
-            if net not in out:
+            if net not in out and not _excluded(net):
                 out.append(net)
             continue
         # 宽网段：把它包含的"接口所在 /24"排前面（用接口地址定位，而不是猜第一个 /24）
         narrows = [str(n) for n in _interface_slash24s() if n.subnet_of(network)]
         for n in narrows:
-            if n not in out:
+            if n not in out and not _excluded(n):
                 out.append(n)
-        if net not in out:                       # 兜底：宽网段本身排最后
+        if net not in out and not _excluded(net):    # 兜底：宽网段本身排最后
             out.append(net)
     return out
 

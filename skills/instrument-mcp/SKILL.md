@@ -1,11 +1,66 @@
 ---
 name: instrument-mcp
-description: instrument MCP 服务器使用指引 — 八台仪器（SDS 示波器/SDG 信号源/Keysight 34465A 万用表/DHO 示波器/MHO900 示波器/DG832 信号源/DH1766 电源/Keysight 3458A 八位半万用表）的 MCP 工具选择、参数语义、安全门、典型工作流，以及 3458A 非 SCPI 用法与 GPIB/VISA 分层排查（preflight）。触发条件：使用 instrument MCP 工具、sds_/sdg_/dmm_/dho_/mho_/dg_/psu_/ks3458a_ 前缀工具、仪器测量/定标/截图/关机决策、3458A、GPIB、VISA、仪器连不上/不通/读超时、仪器排查、preflight。
+description: instrument MCP 服务器使用指引 — 八台仪器（SDS 示波器/SDG 信号源/Keysight 34465A 万用表/DHO 示波器/MHO900 示波器/DG832 信号源/DH1766 电源/Keysight 3458A 八位半万用表）的 MCP 工具选择、参数语义、安全门、典型工作流，compact/legacy 双 profile 用法，以及 3458A 非 SCPI 用法与 GPIB/VISA 分层排查（preflight）。触发条件：使用 instrument MCP 工具、compact profile 的 instr_devices/instr_search/instr_describe/instr_call/instr_batch、或 legacy profile 的 sds_/sdg_/dmm_/dho_/mho_/dg_/psu_/ks3458a_/instr_ 前缀工具、仪器测量/定标/截图/关机决策、3458A、GPIB、VISA、仪器连不上/不通/读超时、仪器排查、preflight。
 ---
 
 # instrument MCP 使用指引
 
-MCP server：`mcp_instruments/server.py`（68 工具 = 64 设备专用 + 3 通用护栏 + 1 故障兜底，八台设备）。
+MCP server：`mcp_instruments/server.py`（68 操作 = 64 设备专用 + 3 通用护栏 + 1 故障兜底，八台设备）。
+**暴露方式取决于 profile**（`--profile=` 或环境变量 `INSTRUMENT_MCP_PROFILE`，默认 `compact`）：
+
+| profile | 模型看到的工具 | 本文的用法 |
+|---|---|---|
+| `compact` | 只有 5 个：`instr_devices` / `instr_search` / `instr_describe` / `instr_call` / `instr_batch` | **默认档**；下文的名字是**操作**，需经 `instr_call` 调用，见下 |
+| `legacy` | 68 个操作各一个工具（`sds_measure`、`dg_set_wave` …） | 下文决策树里的名字**直接可用** |
+
+## 零、compact 是默认档（先读这一节）
+
+本文下文用 legacy 工具名书写，因为那是最短、最稳定的称呼。在 compact 下**不要直接调它们**，
+按下述方式换用即可——**能力完全一样，路径同一条**：
+
+```
+instr_devices()                      有哪些仪器（默认**瞬时**：只读配置+上次成功缓存）
+instr_devices(full=true)             全量发现（扫各网段；本机实测 355.9s，且会占住执行器）
+instr_search("设置的词")              找操作，返回规范 id + 一句话摘要
+instr_search("")                      **列出全部能力目录**（按设备族分组）——不知道用什么词时先用它
+instr_describe("sds_measure")        取该操作的完整参数表 / 说明 / 安全属性 / 关键约束
+instr_call(op, args)                 执行一次（op 用规范 id 或 legacy 名都行）
+instr_batch(plan)                    组合执行（扫频 / 批采 / 参数矩阵）
+```
+
+**`instr_devices` 默认不做扫描**：它读 `devices.json` 配置 + `last_good_resources.json`
+缓存，瞬时返回（实测 0.03s）。只有**新接仪器 / 换了 IP 网段 / 已知地址全连不上**时才
+值得用 `full=true` —— 那会扫本机所有网段（本机两个 /16 共 13 万台主机，355.9s），
+期间**其它仪器调用一律返回 device_busy**，还可能超出客户端默认 60s 的工具超时。
+
+**规范 id = legacy 工具名把首个下划线换成点**：
+
+```
+sds_measure      →  sds.measure
+dg_set_wave      →  dg.set_wave
+instr_query      →  instr.query
+ks3458a_status   →  ks3458a.status
+```
+
+所以本文里任何 `sds_xxx` / `dg_xxx` / `ks3458a_xxx` 都可以照此翻译后用 `instr_call` 调用，
+例如本文写 `sds_measure(item="PKPK", ch=1)`，compact 下就是：
+
+```
+instr_call(op="sds.measure", args={"item": "PKPK", "ch": 1})
+```
+
+两点必须知道：
+
+- **参数名与默认值完全一致**，照 `instr_describe` 给的参数表填；必填缺失或类型不符会**在本地被拒**，
+  不会下发到设备。
+- **安全门一样生效**（`confirm=True`、黑名单、DG832 保护联锁都在操作实现与库层，不经前端放行）。
+  换句话说：在 compact 下调用有副作用的操作，**同样**要按本文的 `confirm` / 前置保护要求来。
+
+组合任务（扫频、批量采集）优先用 `instr_batch` 而不是反复 `instr_call`：前者**整批一个执行单元**，
+期间别的调用不会插进来（扫频需要这个），也不会为每一步付一次模型往返。
+
+---
+
 本文是 AI 选择工具/参数时的决策依据。
 
 ## 一、工具选择决策树

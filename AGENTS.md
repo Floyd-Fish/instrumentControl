@@ -319,10 +319,10 @@ CH2 的 −11.99V 是跟踪跟随，不是故障；同时任何远程会话都�
 
 ## 六、已知待办
 
-- **MCP 工具按配置选择性加载**（2026-09-09 调研完成，未实施）：opencode 客户端
-  支持 `tools` 配置 + glob（`"instruments_sds_*": false`，工具名带 server 名前缀
-  `instruments_`）；server 端可用 FastMCP `remove_tool()` 或环境变量条件注册做
-  更彻底的控制（tools/list 就不含）。短期用客户端配置即可（零代码）。
+- ~~MCP 工具按配置选择性加载~~ **已实现（2026-09-23，服务端 profile）**：见「七、runtime 分层与 MCP profile」。
+  早先设想的"用客户端 `tools` 配置过滤"**只在部分客户端成立**——opencode 支持
+  `tools` + glob，而 DSH 的 `dsh-mcp-client` 没有任何工具过滤字段（2026-09-23 查证），
+  故服务端 profile 是多客户端下唯一可行方案。
 - ~~sds_control 波形读取：PREamble DESC 布局不符~~ **已澄清（2026-09-09）**：
   DESC 解析完全正确——`interval`(1ns) 与 `ACQ:SRAT?`(1GSa/s) 一致，FFT 主频与设备
   硬件测量吻合，电压换算 Vpp 与测量值一致。此前"读出全零/interval 不可信"的判断
@@ -362,7 +362,8 @@ CH2 的 −11.99V 是跟踪跟随，不是故障；同时任何远程会话都�
   ① **工具可见集 147 → 46**：仪器类工具不再全局注册，改按项目/会话预设挂载。评审认为
      "候选集过载"的杠杆大于"单条 description 太长"，与本仓实测（窄接口工具调用率 100%
      vs 宽接口约 25%）一致；**需配套一个低成本的能力发现/切换机制**，避免 preset 切太窄
-     导致模型发现不了它需要的工具。
+     导致模型发现不了它需要的工具。**（2026-10-08 注：① 已由 v2dev 的 compact profile
+     实现并合入——见第七章；②~⑤ 仍未实施。）**
   ② **参数域交给 schema**：改用 Pydantic `Literal`/`Enum`（或 `Annotated[str, Field(...)]`）。
      当前参数 schema 只有 title/type，长枚举移进 skill 后接口退化成"无约束字符串"，会诱发
      幻觉参数。评审给的选择序：**schema Enum > description 列值 > `list_*` 运行时查询**；
@@ -379,3 +380,199 @@ CH2 的 −11.99V 是跟踪跟随，不是故障；同时任何远程会话都�
   BROKEN_LINK，并安全回收"仓库删除 skill 后遗留的孤儿链接"（当前有意不清理，见
   `verify_install_skills_uninstall.py` §7）；以及 **57 原子核对只证明文本守恒、不证明
   工具路由未退化**，需按 ④ 补行为侧的检查。
+- **TS-ASTATION 远程 MCP 部署（2026-10-08 侦察，方案待定）**：3458A 在远程机
+  （TS-ASTATION，PnP 82357B OK、preflight `ID?`→HP3458A 链路通）。远程机已有
+  `C:\MySpace\AI\instrumentControl\`（仅 keysight_3458a + common 子集，无 git、无
+  mcp_instruments）、Python 3.14.6 + pyvisa/numpy/psutil、**缺 mcp 包**。若做远程 MCP
+  单例需：同步完整代码 + 装 mcp（Py3.14 兼容性待验证）+ 计划任务常驻（WinRM 会话内
+  进程随会话死，skill 坑 #9）。**当前裁定：维持远程脚本模式**（远程跑采集脚本即可），
+  MCP 化等真实使用频率证明后再定。
+
+## 七、runtime 分层与 MCP profile（2026-09-23）
+
+改仪器能力之前先读本节——它决定新代码该放哪一层。
+
+```
+mcp_instruments/            前端（MCP 专属）
+  server.py                 legacy 68 工具 + profile 选择 + 执行器
+  compact_tools.py          compact 4 工具（devices / search / describe / call）
+instrument_runtime/         能力与护栏（**不依赖 MCP/FastMCP/pyvisa**）
+  registry.py  catalog.py   操作登记 + 68 项声明式安全分类（risk/confirm/raw_scpi/verify）
+  policy.py                 黑名单与查询判据（纯函数）
+  broker.py                 放行口 decide_scpi() + 进程内设备锁
+  audit.py  verify.py       审计落盘、回读配名、错误队列排空
+  validate.py               按操作 schema 校验 instr_call 入参
+  plan.py                   Batch Plan DSL v1：结构/作用域/规模 preflight（纯函数）
+  batch.py                  batch 解释器（在**一个** executor job 内跑完整批）
+*_control/                  设备库（既有，未改动）
+```
+
+**纪律**：`instrument_runtime/` 只依赖标准库。加设备逻辑放 `*_control/`；加护栏或
+能力元数据放 `instrument_runtime/`；只有 MCP 协议相关的东西才放 `mcp_instruments/`。
+`verify_broker_offline.py` 会在子进程里断言这条边界（import broker 不得牵入
+mcp/fastmcp/pyvisa）。
+
+**profile**（`--profile=<legacy|compact>` 或环境变量 `INSTRUMENT_MCP_PROFILE`，默认 `compact`）：
+
+| | 工具数 | 工具定义体量 | 说明 |
+|---|---|---|---|
+| `compact` | 5 | 4600 字符 ≈ 1.5k token | **默认档**；比 legacy 省约 18.4k token/请求（92.3%） |
+| `legacy` | 68 | 59677 字符 ≈ 19.9k token | 具名工具面；skill 与文档里的工具名都指这套 |
+
+（体量由 `verify_compact_profile.py` 的 S4 现场测量，随描述文案变动。）
+
+compact 的 5 个工具：`instr_devices`（列仪器）、`instr_search`（按关键词找操作）、
+`instr_describe`（取完整参数表/说明/安全属性）、`instr_call`（执行一次操作）、
+`instr_batch`（一次提交多个操作）。
+
+### `instr_batch` 与 Batch Plan DSL v1
+
+组合执行（扫频、批采、参数矩阵）用 `instr_batch(plan)`，plan 是**版本化** JSON
+（`plan_version: 1`）。设计契约与取舍见
+`docs/gpt_qa/2026-09-23-instrument-gateway-arch.md` 的 Q3/Q4；改这条路径前必须读。
+
+**三条不许破的语义**：
+
+1. **整批是一个 executor job**。BUSY 在整批期间保持，进程内其它设备调用拿到
+   `device_busy` 而**不会插进序列中间**——扫频需要的正是这个。它保证的是进程内
+   **non-interleaving**，**不是事务原子性**：不回滚，跨进程也不互斥。
+   若改成"每个叶子各提交一个 job"，BUSY 会在步间释放，别的调用能插进来改频率。
+2. **batch 自己不持 `_DEVICE_LOCK`**，叶子经 `_invoke_operation` 直接用 canonical
+   operation 的实现（各自 `_call` 照常取锁，无嵌套 → 无死锁）。**绝不能**再走一次
+   executor 或走公开的 `instr_call`（那是 executor 自调用）。
+3. **deadline 是协作式的**：只在叶子**开始前**检查，到期不再启动新叶子，已启动的
+   允许自然结束。上界是"最多再完成一个 canonical operation"——**不能**承诺"最多再发
+   一条 SCPI"。底层 native 调用无法安全中断，声称"已取消"是错误事实。
+
+**其它裁定**：变量用类型化引用 `{"$var": "名字"}`（不支持字符串模板）；capture 用整
+result 或 RFC 6901 JSON Pointer，pointer 取不到就报 `capture_pointer_not_found`，
+**绝不猜字段**；作用域严格且**静态拒绝**（foreach 内 capture 不能逃逸到外层、禁止
+shadowing、未定义变量）；`max_leaf_steps` **精确计数但不展开**（超限时零仪器调用），
+服务器另有硬上限；失败时**已产生的部分结果全部返回**（仪器侧副作用已发生，隐瞒会让
+调用方无法判断设备状态）；capture 以**事件日志**返回而非扁平 dict（foreach 同名变量
+在多轮中合法共存）；跨进程争用告警聚合到 run 级的 `contention` 字段并置
+`integrity=contended`，但**不**把 `ok` 改成 false（既有口径是只告警、由调用方裁决）。
+
+**两条不变量**（改 profile 相关代码时勿破）：
+1. **两种 profile 都完整登记 68 个操作**，且 `instr_call` 与 legacy 同名工具
+   **共用同一执行路径**（`_run_operation_by_name` 与 `device_tool` 的 wrapper 逐句等价）
+   ——不这样就会出现"换 profile 后超时/device_busy 语义变了"这类极难查的差异。
+2. **护栏不经前端放行**：黑名单在 `policy`/操作实现层，DG832 保护联锁在库里。
+   绕过 compact 前端直接调 `instr_call` 同样跳不过任何门。前端只做入参校验。
+
+新增工具必须同时在 `instrument_runtime/catalog.py` 登记风险等级，否则服务起不来
+（未分类的工具不允许上线）。
+
+### 发现（instr_discover / instr_devices）的成本控制（2026-09-23）
+
+**全量发现很贵，别默认调它。** 实测本机 355.9s —— 两个 /16（公司网 + 仪器网）合计
+**131,830 台主机**要扫；而且它经统一执行器跑，**BUSY 全程保持**，那 6 分钟里
+**所有其它仪器调用都返回 `device_busy`**。它还超过 MCP 客户端默认的 60s
+工具超时（实测客户端报 `-32001`）。
+
+| 入口 | 行为 | 耗时 |
+|---|---|---|
+| `instr_devices()`（compact，默认） | 只读**配置 + 上次成功缓存**，不扫描 | **0.03s** |
+| `instr_devices(full=true)` | 全量发现（扫描各网段 + 所有 VISA 接口） | 355.9s（本机） |
+| `instr_discover`（legacy） | 全量发现（**原语义未改**） | 同上 |
+
+地址解析（`common/resolver.py`）的顺序仍是：**显式入参 → 环境变量 → `devices.json`
+→ 上次成功缓存 `last_good_resources.json` → 自动发现**。所以常规设备操作走缓存
+（`dg_status` 168ms），**只有显式"发现"才全扫**。
+
+**排除不需要扫的网段**（本机最有效的一招：公司网那侧不会有仪器）：
+
+```
+# 环境变量（逗号/分号分隔）
+INSTRUMENT_EXCLUDE_CIDRS=172.29.0.0/16,172.16.80.0/24
+# 或写进 %LOCALAPPDATA%\instrumentControl\devices.json 的 exclude_cidrs 数组
+```
+
+本机加上这两条后待扫主机从 **131,830 → 65,788**。排除**只作用于扫描**，
+已配置/已缓存的地址不受影响；写错的 CIDR 会被忽略而不是拖垮扫描。
+
+**串口探测**已收紧到内层 0.5s、外层硬杀 2s（原 2s/8s），6 个空口全量探测
+10s → **1.85s**。外层刻意不是 0.5s：它要覆盖 python 子进程启动（Windows 约
+0.3~0.5s），设成 0.5s 会把好设备也误判成"驱动挂起"。
+
+未做但值得做（按性价比）：宽扫改**后台任务 + 缓存**（不再占 BUSY）、
+**L2 广播发现**（VXI-11 portmapper，把 O(主机数) 变成 O(1) 个包，需先确认仪器是否
+响应广播）、有界并发 + 超时重试（现有并发上限是硬编码的 256，注释里记着无限并发
+会导致假阴性）。
+
+校验脚本（全部离线，不碰仪器）：
+`verify_registry_parity.py`（工具表逐字节一致 + 分类覆盖）、`verify_broker_offline.py`
+（分层边界 + 判据等价）、`verify_compact_profile.py`（compact 形态 + 能力不丢 + 成本）、
+`verify_batch_offline.py`（plan preflight / 作用域 / 规模 / 指针 / 执行 / **"整批一个 job"**
+这条核心不变量）、`verify_compact_mcp.py`（**协议级**：起真实子进程走 JSON-RPC，
+确认客户端真能拿到 5 个工具并调用成功）、`dump_mcp_tools.py`（固化 tools/list 快照）。
+
+### 在 DSH 上把 compact 切成默认（切换与回滚）
+
+目标文件 `~/.dsh/profiles/web/cordis.patch.yml` 属**外部目录**——按仓库规则不由 AI 代改，
+由使用者执行。用仓内脚本，它负责备份、精确定位、YAML 校验与幂等（**逐行文本编辑**，
+不做 YAML 往返：往返会抹掉这个文件里一半的价值——注释）：
+
+```bash
+python TEST_SCRIPTS/common/switch_dsh_instrument_profile.py --profile compact --dry-run
+python TEST_SCRIPTS/common/switch_dsh_instrument_profile.py --profile compact --apply
+# 回滚
+python TEST_SCRIPTS/common/switch_dsh_instrument_profile.py --profile legacy --apply
+```
+
+它做的就是在 `mcp-instrument` 条目的 `env:` 下加/删一行 `INSTRUMENT_MCP_PROFILE`。
+compact 已是**代码默认档**，所以正常情况下配置里不需要这一行；脚本现在的用途是
+把某一档**显式钉死**（例如回退 `--profile legacy --apply`），或临时试验另一档。
+
+**切换后必须重启 DSH**：MCP 子进程的工具表不会热重载（HMR 只重载插件配置），
+与 `cordis.patch.yml` 里既有的那条注记同因。重启会中断当前会话，故这一步只能由人做。
+
+校验套件（全部离线、不碰仪器，除最后一条）：
+
+```bash
+python TEST_SCRIPTS/common/verify_registry_parity.py   # registry <-> legacy 工具表 + 基线快照
+python TEST_SCRIPTS/common/verify_broker_offline.py    # 护栏/锁的唯一真源
+python TEST_SCRIPTS/common/verify_compact_profile.py   # 进程内：形态/能力/成本
+python TEST_SCRIPTS/common/verify_batch_offline.py     # Batch Plan DSL 语义
+python TEST_SCRIPTS/common/verify_compact_mcp.py       # 协议级 + 默认档 + 设备路径（死回环）
+python TEST_SCRIPTS/common/verify_mcp_tools_meta.py    # legacy 工具表元数据
+python TEST_SCRIPTS/common/audit_guardrail_coverage.py # 黑名单误伤 / 白名单出处
+python TEST_SCRIPTS/common/dump_mcp_tools.py           # 固化线上工具表快照
+```
+
+**校验脚本自己钉 profile**：断言 legacy 具名工具面的那几个（`verify_registry_parity`、
+`verify_compact_profile`、`verify_mcp_tools_meta`、`dump_mcp_tools`、`verify_session_lock_live`、
+`ks3458a/` 下两个）在 import / spawn 之前**显式**设 `INSTRUMENT_MCP_PROFILE=legacy`。
+默认档改动后若不这样钉，它们会静默对着 compact 的 5 个工具做断言——要么失败得莫名其妙，
+要么（成本对比那种）算出没有意义的数字。`verify_compact_mcp.py` 的 S0 反过来测默认档：
+它把环境变量**摘掉**（而不是设成 compact），否则测的是环境变量而不是 `_DEFAULT_PROFILE`。
+
+FastMCP 派生漂移（`Tool.from_function` 的结果与真实注册对象不一致）只在 legacy 下做启动期
+比对——compact 的服务实例里没有这 68 个工具，无从比对。所以这道守卫现在由
+`verify_registry_parity.py` 承担（对着冻结快照逐字节断言），**FastMCP 升级后必须跑它**。
+
+切换前后的**真实对比数据**（读 DSH 会话日志里那次请求真正带了什么）：
+
+```bash
+python TEST_SCRIPTS/common/measure_dsh_tool_cost.py "--workspace=--D-ChatWorkspace--" --out before.json
+# 重启后
+python TEST_SCRIPTS/common/measure_dsh_tool_cost.py "--workspace=--D-ChatWorkspace--" --out after.json
+python TEST_SCRIPTS/common/measure_dsh_tool_cost.py --compare before.json after.json
+```
+
+实测切换前基线（真实会话，非合成快照）：整个工具表 108 个 / 92629 字符 ≈ 30876 token，
+其中 `mcp__instrument__*` 57 个 / 40991 字符 ≈ 13663 token = **44.4%**。
+
+另一组是**合成对比**（`verify_compact_profile.py` 的 S4 现场测量，只看仪器这一组）：
+68 个工具 59,677 字符 ≈ 19.9k token → 5 个工具 4,600 字符 ≈ 1.5k token，省约 18.4k。
+**两组数字不可混用**：会话那一组是当时实际注册的工具集，且整个工具表里还有其它
+MCP 服务器的工具。
+
+回滚不留不一致状态：legacy 的 68 个工具名与 schema 在任何阶段都**未变过**
+（`verify_registry_parity.py` 对着基线快照逐字节断言）。
+
+**当前状态**：compact 是**代码默认档**，任何地方都不必再配 profile（`cordis.patch.yml` 里
+那行 `INSTRUMENT_MCP_PROFILE: compact` 已属冗余，留着无害）。静态工具定义之外的对比数据
+（总输入 token、工具选择失败率、参数错误率、往返次数）需要重启用真实会话跑一轮才有。
+
+设计与取舍见 `docs/gpt_qa/2026-09-23-instrument-gateway-arch.md`。

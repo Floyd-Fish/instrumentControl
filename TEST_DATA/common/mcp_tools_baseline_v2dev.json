@@ -1,0 +1,4001 @@
+{
+  "captured_at": "2026-09-23T15:23:00",
+  "server": "mcp_instruments\\server.py",
+  "server_info": {
+    "name": "instruments",
+    "version": "1.29.0"
+  },
+  "protocol_version": "2024-11-05",
+  "tool_count": 68,
+  "tools": [
+    {
+      "name": "dg_check_error",
+      "description": "DG832 查询并清空设备错误队列（空列表 = 正常）。命令疑似被拒后用它诊断。",
+      "inputSchema": {
+        "properties": {
+          "model": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Model"
+          },
+          "resource": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Resource"
+          }
+        },
+        "title": "dg_check_errorArguments",
+        "type": "object"
+      },
+      "outputSchema": {
+        "properties": {
+          "result": {
+            "title": "Result",
+            "type": "string"
+          }
+        },
+        "required": [
+          "result"
+        ],
+        "title": "dg_check_errorOutput",
+        "type": "object"
+      }
+    },
+    {
+      "name": "dg_counter",
+      "description": "DG832 内置频率计测量（面板 [Counter] 输入口信号），返回频率等读数。",
+      "inputSchema": {
+        "properties": {
+          "model": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Model"
+          },
+          "resource": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Resource"
+          }
+        },
+        "title": "dg_counterArguments",
+        "type": "object"
+      },
+      "outputSchema": {
+        "properties": {
+          "result": {
+            "title": "Result",
+            "type": "string"
+          }
+        },
+        "required": [
+          "result"
+        ],
+        "title": "dg_counterOutput",
+        "type": "object"
+      }
+    },
+    {
+      "name": "dg_get_protect",
+      "description": "DG832 查询指定通道的电压保护配置（开关/上限/下限）。",
+      "inputSchema": {
+        "properties": {
+          "ch": {
+            "title": "Ch",
+            "type": "integer"
+          },
+          "model": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Model"
+          },
+          "resource": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Resource"
+          }
+        },
+        "required": [
+          "ch"
+        ],
+        "title": "dg_get_protectArguments",
+        "type": "object"
+      },
+      "outputSchema": {
+        "properties": {
+          "result": {
+            "title": "Result",
+            "type": "string"
+          }
+        },
+        "required": [
+          "result"
+        ],
+        "title": "dg_get_protectOutput",
+        "type": "object"
+      }
+    },
+    {
+      "name": "dg_output",
+      "description": "DG832 开关通道 ch(1-2) 输出。⚠ **开/关都需 confirm=True**——关断同样可能打断\n正在进行的测试或他人实验（授权语义与 `sdg_output`/`psu_output` 一致）。\n\n打开前需已开启有效电压保护（见 `dg_protect`），否则被拒（库内联锁）。\n建议先 `dg_status` 查当前输出状态与负载。",
+      "inputSchema": {
+        "properties": {
+          "ch": {
+            "title": "Ch",
+            "type": "integer"
+          },
+          "on": {
+            "title": "On",
+            "type": "boolean"
+          },
+          "confirm": {
+            "default": false,
+            "title": "Confirm",
+            "type": "boolean"
+          },
+          "model": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Model"
+          },
+          "resource": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Resource"
+          }
+        },
+        "required": [
+          "ch",
+          "on"
+        ],
+        "title": "dg_outputArguments",
+        "type": "object"
+      },
+      "outputSchema": {
+        "properties": {
+          "result": {
+            "title": "Result",
+            "type": "string"
+          }
+        },
+        "required": [
+          "result"
+        ],
+        "title": "dg_outputOutput",
+        "type": "object"
+      }
+    },
+    {
+      "name": "dg_protect",
+      "description": "DG832 输出电压保护（防超压）：设上限/下限（V）与开关。\n\n⚠ **强制流程**：设置幅度/偏移（`dg_set_wave`/`dg_set_param` 的 amp/offset）或打开输出\n（`dg_output` on）之前，必须先用本工具开启有效保护（`state=True` 且 `high>low`），\n否则返回 `protect_required` 被拒；保护开启后越界设置返回 `protect_range`，\n不会静默超压。省略的参数保持当前值；全省略 = 仅查询。\n",
+      "inputSchema": {
+        "properties": {
+          "ch": {
+            "title": "Ch",
+            "type": "integer"
+          },
+          "high": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "High"
+          },
+          "low": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Low"
+          },
+          "state": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "State"
+          },
+          "model": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Model"
+          },
+          "resource": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Resource"
+          }
+        },
+        "required": [
+          "ch"
+        ],
+        "title": "dg_protectArguments",
+        "type": "object"
+      },
+      "outputSchema": {
+        "properties": {
+          "result": {
+            "title": "Result",
+            "type": "string"
+          }
+        },
+        "required": [
+          "result"
+        ],
+        "title": "dg_protectOutput",
+        "type": "object"
+      }
+    },
+    {
+      "name": "dg_query",
+      "description": "DG832 只读 SCPI 查询（如 `:SOUR1:APPL?`、`:OUTP1?`、`:MEASure:ITEM? VPP,CHANnel1`）。\n整条必须是纯查询——判据同 instr_query：每条 `;` 分段的**命令头带 '?'** 即可，\n**问号后允许带参数**；写命令（头里无 '?'）与复位/锁定类一律拒绝。",
+      "inputSchema": {
+        "properties": {
+          "scpi": {
+            "title": "Scpi",
+            "type": "string"
+          },
+          "model": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Model"
+          },
+          "resource": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Resource"
+          }
+        },
+        "required": [
+          "scpi"
+        ],
+        "title": "dg_queryArguments",
+        "type": "object"
+      },
+      "outputSchema": {
+        "properties": {
+          "result": {
+            "title": "Result",
+            "type": "string"
+          }
+        },
+        "required": [
+          "result"
+        ],
+        "title": "dg_queryOutput",
+        "type": "object"
+      }
+    },
+    {
+      "name": "dg_set_dc",
+      "description": "DG832 DC 专用切换：设直流电平（V）并返回切换前配置快照（restore: shape/freq/amp/\noffset/phase）。已在 DC 时只改电平、restore 为 None。\n切回非 DC 时请用 restore 值**显式**传参（库不做隐式恢复，避免非预期写入）。",
+      "inputSchema": {
+        "properties": {
+          "ch": {
+            "title": "Ch",
+            "type": "integer"
+          },
+          "level": {
+            "title": "Level",
+            "type": "number"
+          },
+          "model": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Model"
+          },
+          "resource": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Resource"
+          }
+        },
+        "required": [
+          "ch",
+          "level"
+        ],
+        "title": "dg_set_dcArguments",
+        "type": "object"
+      },
+      "outputSchema": {
+        "properties": {
+          "result": {
+            "title": "Result",
+            "type": "string"
+          }
+        },
+        "required": [
+          "result"
+        ],
+        "title": "dg_set_dcOutput",
+        "type": "object"
+      }
+    },
+    {
+      "name": "dg_set_param",
+      "description": "DG832 单参数设置并读回。param: freq(Hz)/amp(Vpp)/offset(Vdc)/phase(°)/load(Ω，inf=高阻)。\namp/offset 会做电压保护范围校验（需先开保护）。设备静默钳制时返回体 note 会提示。",
+      "inputSchema": {
+        "properties": {
+          "ch": {
+            "title": "Ch",
+            "type": "integer"
+          },
+          "param": {
+            "title": "Param",
+            "type": "string"
+          },
+          "value": {
+            "title": "Value",
+            "type": "string"
+          },
+          "model": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Model"
+          },
+          "resource": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Resource"
+          }
+        },
+        "required": [
+          "ch",
+          "param",
+          "value"
+        ],
+        "title": "dg_set_paramArguments",
+        "type": "object"
+      },
+      "outputSchema": {
+        "properties": {
+          "result": {
+            "title": "Result",
+            "type": "string"
+          }
+        },
+        "required": [
+          "result"
+        ],
+        "title": "dg_set_paramOutput",
+        "type": "object"
+      }
+    },
+    {
+      "name": "dg_set_wave",
+      "description": "DG832 快速设置波形（多参数一条 `:APPL` 命令）。ch=1-2。\n\nshape: sine/square/ramp/pulse/dc/noise/prbs/user(任意波)/harmonic/dualtone/rs232/sequence；\nfreq(Hz) / amp(Vpp) / offset(Vdc) / phase(°0-360)；sequence 波首个参数是采样率 sample_rate。\n省略的参数**保持当前值**（先读当前配置填充，不会重置为默认）。\n⚠ 设 amp/offset 前需已开保护（见 dg_protect），否则 protect_required。\n本工具**不改变输出开关状态**。",
+      "inputSchema": {
+        "properties": {
+          "ch": {
+            "title": "Ch",
+            "type": "integer"
+          },
+          "shape": {
+            "title": "Shape",
+            "type": "string"
+          },
+          "freq": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Freq"
+          },
+          "amp": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Amp"
+          },
+          "offset": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Offset"
+          },
+          "phase": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Phase"
+          },
+          "sample_rate": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Sample Rate"
+          },
+          "model": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Model"
+          },
+          "resource": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Resource"
+          }
+        },
+        "required": [
+          "ch",
+          "shape"
+        ],
+        "title": "dg_set_waveArguments",
+        "type": "object"
+      },
+      "outputSchema": {
+        "properties": {
+          "result": {
+            "title": "Result",
+            "type": "string"
+          }
+        },
+        "required": [
+          "result"
+        ],
+        "title": "dg_set_waveOutput",
+        "type": "object"
+      }
+    },
+    {
+      "name": "dg_status",
+      "description": "DG832 快照：设备信息（型号/序列号/固件）+ CH1/CH2 当前波形配置（波形/频率/\n幅度/偏移/相位）、输出开关、负载。**动这台之前先查它**。\n\nmodel: 同族型号可选（DG811/812/821/822/831/832 同命令集，省略默认 DG832；\n未登记型号返回 model_unsupported）。",
+      "inputSchema": {
+        "properties": {
+          "model": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Model"
+          },
+          "resource": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Resource"
+          }
+        },
+        "title": "dg_statusArguments",
+        "type": "object"
+      },
+      "outputSchema": {
+        "properties": {
+          "result": {
+            "title": "Result",
+            "type": "string"
+          }
+        },
+        "required": [
+          "result"
+        ],
+        "title": "dg_statusOutput",
+        "type": "object"
+      }
+    },
+    {
+      "name": "dg_sweep",
+      "description": "DG832 频率扫频配置/开关/查询。全省略且 state=None = 仅查询当前配置。\n\nstart/stop(Hz，双向皆可，须在当前波形频率上限内)；time(s，1ms~500s)；\nspacing: lin/log/step；step(2~1024，仅 step 间隔)；\nhtime_start/htime_stop/rtime(s)；trig_source: int/ext/man；\nstate: True=开启（设备会自动关闭调制/脉冲串）/False=关闭/None=不改。\n仅 sine/square/ramp/user 支持扫频。",
+      "inputSchema": {
+        "properties": {
+          "ch": {
+            "title": "Ch",
+            "type": "integer"
+          },
+          "start": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Start"
+          },
+          "stop": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Stop"
+          },
+          "time": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Time"
+          },
+          "spacing": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Spacing"
+          },
+          "step": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Step"
+          },
+          "htime_start": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Htime Start"
+          },
+          "htime_stop": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Htime Stop"
+          },
+          "rtime": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Rtime"
+          },
+          "trig_source": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Trig Source"
+          },
+          "state": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "State"
+          },
+          "model": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Model"
+          },
+          "resource": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Resource"
+          }
+        },
+        "required": [
+          "ch"
+        ],
+        "title": "dg_sweepArguments",
+        "type": "object"
+      },
+      "outputSchema": {
+        "properties": {
+          "result": {
+            "title": "Result",
+            "type": "string"
+          }
+        },
+        "required": [
+          "result"
+        ],
+        "title": "dg_sweepOutput",
+        "type": "object"
+      }
+    },
+    {
+      "name": "dg_sweep_trigger",
+      "description": "DG832 手动触发一次扫频（需触发源为 manual 且该通道输出已打开）。",
+      "inputSchema": {
+        "properties": {
+          "ch": {
+            "title": "Ch",
+            "type": "integer"
+          },
+          "model": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Model"
+          },
+          "resource": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Resource"
+          }
+        },
+        "required": [
+          "ch"
+        ],
+        "title": "dg_sweep_triggerArguments",
+        "type": "object"
+      },
+      "outputSchema": {
+        "properties": {
+          "result": {
+            "title": "Result",
+            "type": "string"
+          }
+        },
+        "required": [
+          "result"
+        ],
+        "title": "dg_sweep_triggerOutput",
+        "type": "object"
+      }
+    },
+    {
+      "name": "dho_channel",
+      "description": "DHO 通道垂直参数设置（档位/偏置/耦合/探头比/显示）——**写后回读验证**。\n\n与 mho_channel 同一套内核语义：中心 = −offset、固定 **scale → offset** 顺序、\n通道 OFF 时写垂直参数会自动先开（OFF 下写入被静默忽略）、偏置被钳制时 adjusted + reasons。\n⚠ **DHO 不在本实验台**：本工具为共享内核的离线验证 + 手册核对，未实机验证。",
+      "inputSchema": {
+        "properties": {
+          "ch": {
+            "title": "Ch",
+            "type": "integer"
+          },
+          "scale": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Scale"
+          },
+          "offset": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Offset"
+          },
+          "coupling": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Coupling"
+          },
+          "probe": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Probe"
+          },
+          "display": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Display"
+          },
+          "resource": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Resource"
+          }
+        },
+        "required": [
+          "ch"
+        ],
+        "title": "dho_channelArguments",
+        "type": "object"
+      },
+      "outputSchema": {
+        "properties": {
+          "result": {
+            "title": "Result",
+            "type": "string"
+          }
+        },
+        "required": [
+          "result"
+        ],
+        "title": "dho_channelOutput",
+        "type": "object"
+      }
+    },
+    {
+      "name": "dho_measure_item",
+      "description": "DHO 测量查询。item 枚举（RIGOL 表）: VPP/VMAX/VMIN/VAMP/VAVG/VRMS/\nPERiod/FREQuency/PWIDth/NWIDth/PDUTy/RTIMe/FTIMe 等；ch=1-4；\n双信源项（延迟/相位）需给 ch2。\n`samples>1` 时主机侧连读 N 次返回 mean/min/max/stddev（单次读数抖动大，用均值下结论）；\n`rails=True` 额外读**顶轨/底轨**（VTOP/VBASe）并**上下分别**判断贴边\n（`top_touching`/`bottom_touching`/`edges_touching` + `hints`）；\n无有效读数时分类报因（suspicious/hint：channel_off / off_screen / near_edge /\nfew_edges / no_signal；near_edge 另给 `edges_touching`/`edge_hints` 分顶/底）。\n⚠ **DHO 不在本实验台**：读路径来自共享内核（离线验证 + 手册），写路径未实机验证；\n离屏判据依赖\"垂直格数/中心=−offset\"标定，DHO 未标定 → 窗口/贴边类判据返回 None。",
+      "inputSchema": {
+        "properties": {
+          "item": {
+            "title": "Item",
+            "type": "string"
+          },
+          "ch": {
+            "default": 1,
+            "title": "Ch",
+            "type": "integer"
+          },
+          "ch2": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Ch2"
+          },
+          "samples": {
+            "default": 1,
+            "title": "Samples",
+            "type": "integer"
+          },
+          "rails": {
+            "default": false,
+            "title": "Rails",
+            "type": "boolean"
+          },
+          "resource": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Resource"
+          }
+        },
+        "required": [
+          "item"
+        ],
+        "title": "dho_measure_itemArguments",
+        "type": "object"
+      },
+      "outputSchema": {
+        "properties": {
+          "result": {
+            "title": "Result",
+            "type": "string"
+          }
+        },
+        "required": [
+          "result"
+        ],
+        "title": "dho_measure_itemOutput",
+        "type": "object"
+      }
+    },
+    {
+      "name": "dho_status",
+      "description": "DHO 示波器只读快照（通道/时基/触发/采集）。",
+      "inputSchema": {
+        "properties": {
+          "resource": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Resource"
+          }
+        },
+        "title": "dho_statusArguments",
+        "type": "object"
+      },
+      "outputSchema": {
+        "properties": {
+          "result": {
+            "title": "Result",
+            "type": "string"
+          }
+        },
+        "required": [
+          "result"
+        ],
+        "title": "dho_statusOutput",
+        "type": "object"
+      }
+    },
+    {
+      "name": "dho_timebase",
+      "description": "DHO 水平时基设置（s/div 与水平位移），两者都回读。\n⚠ 时基是**全局**的（影响所有通道）；**DHO 不在本实验台**，未实机验证。",
+      "inputSchema": {
+        "properties": {
+          "scale": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Scale"
+          },
+          "offset": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Offset"
+          },
+          "resource": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Resource"
+          }
+        },
+        "title": "dho_timebaseArguments",
+        "type": "object"
+      },
+      "outputSchema": {
+        "properties": {
+          "result": {
+            "title": "Result",
+            "type": "string"
+          }
+        },
+        "required": [
+          "result"
+        ],
+        "title": "dho_timebaseOutput",
+        "type": "object"
+      }
+    },
+    {
+      "name": "dho_trigger",
+      "description": "DHO 触发设置（边沿源/电平/斜率、触发模式/扫描）——写后回读，枚举对照手册校验。\nmode ∈ DHO 手册 3.27.1 的 17 项（**CAN/LIN 仅 DHO900**）；slope 第三态 RFALl；\n⚠ 触发模式/扫描是**全局**设定；**DHO 不在本实验台**，未实机验证。",
+      "inputSchema": {
+        "properties": {
+          "source": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Source"
+          },
+          "level": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Level"
+          },
+          "slope": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Slope"
+          },
+          "mode": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Mode"
+          },
+          "sweep": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Sweep"
+          },
+          "resource": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Resource"
+          }
+        },
+        "title": "dho_triggerArguments",
+        "type": "object"
+      },
+      "outputSchema": {
+        "properties": {
+          "result": {
+            "title": "Result",
+            "type": "string"
+          }
+        },
+        "required": [
+          "result"
+        ],
+        "title": "dho_triggerOutput",
+        "type": "object"
+      }
+    },
+    {
+      "name": "dmm_configure",
+      "description": "34465A 配置测量功能/量程/分辨率（不触发测量）。function: volt_dc/\nvolt_ac/curr_dc/curr_ac/res/fres/cap/freq；range_v/resolution 可选。\n注意 :CONF? 回读有滞后一拍特性，以实测值为准。",
+      "inputSchema": {
+        "properties": {
+          "function": {
+            "title": "Function",
+            "type": "string"
+          },
+          "range_v": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Range V"
+          },
+          "resolution": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Resolution"
+          },
+          "resource": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Resource"
+          }
+        },
+        "required": [
+          "function"
+        ],
+        "title": "dmm_configureArguments",
+        "type": "object"
+      },
+      "outputSchema": {
+        "properties": {
+          "result": {
+            "title": "Result",
+            "type": "string"
+          }
+        },
+        "required": [
+          "result"
+        ],
+        "title": "dmm_configureOutput",
+        "type": "object"
+      }
+    },
+    {
+      "name": "dmm_measure",
+      "description": "34465A 单次测量。function: volt_dc/volt_ac/curr_dc/curr_ac/res/fres/\ncont/cap/diod/freq。",
+      "inputSchema": {
+        "properties": {
+          "function": {
+            "title": "Function",
+            "type": "string"
+          },
+          "resource": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Resource"
+          }
+        },
+        "required": [
+          "function"
+        ],
+        "title": "dmm_measureArguments",
+        "type": "object"
+      },
+      "outputSchema": {
+        "properties": {
+          "result": {
+            "title": "Result",
+            "type": "string"
+          }
+        },
+        "required": [
+          "result"
+        ],
+        "title": "dmm_measureOutput",
+        "type": "object"
+      }
+    },
+    {
+      "name": "dmm_nplc",
+      "description": "34465A 电压 DC 积分时间 NPLC（手册 [SENSe:]VOLTage[:DC]:NPLC）。\n\nvalue=None 查询；给出则设置后回读。取值 0.02/0.2/1/10/100（默认 10）——\n越大越准越慢。注意：NPLC 与 APERture 互斥（设孔径会把 NPLC 置 0）。\n",
+      "inputSchema": {
+        "properties": {
+          "value": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Value"
+          },
+          "resource": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Resource"
+          }
+        },
+        "title": "dmm_nplcArguments",
+        "type": "object"
+      },
+      "outputSchema": {
+        "properties": {
+          "result": {
+            "title": "Result",
+            "type": "string"
+          }
+        },
+        "required": [
+          "result"
+        ],
+        "title": "dmm_nplcOutput",
+        "type": "object"
+      }
+    },
+    {
+      "name": "dmm_status",
+      "description": "34465A 快照：IDN/选件/配置/最近读数。",
+      "inputSchema": {
+        "properties": {
+          "resource": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Resource"
+          }
+        },
+        "title": "dmm_statusArguments",
+        "type": "object"
+      },
+      "outputSchema": {
+        "properties": {
+          "result": {
+            "title": "Result",
+            "type": "string"
+          }
+        },
+        "required": [
+          "result"
+        ],
+        "title": "dmm_statusOutput",
+        "type": "object"
+      }
+    },
+    {
+      "name": "instr_discover",
+      "description": "发现本机所有仪器。返回：\nlan: 网段扫描（TCP 预筛 + 多协议 *IDN?，键=资源串 值=IDN）；\nvisa: VISA 资源列表——USB/GPIB/串口均自动探测 *IDN?（串口被占用时\n返回占用提示，空闲则探测后立即断开，约 2s/口）；\nresolved: 地址解析层当前已知映射（配置+缓存，键=设备类 sds/sdg/dmm/dho/psu）；\nrecognised_now: 本次发现按 *IDN? 识别并写入缓存的设备地址；\npsu_local_restored: 探测到 DH1766 时是否已补发 SYST:LOC 归还面板控制权\n（该电源任何远程会话都会进 REM，见 dh1766_control/docs/EXPERIENCE.md §3.1）。\ncidr 参数可选（如 '10.0.0.0/24'）；**默认扫本机所有接口所在的私网网段**\n（`cidrs` 字段列出实际用到的网段列表）——本机多网卡/挂 VPN 时能覆盖到仪器\n所在的那张网卡；代理 TUN 开启时也能扫（TUN 只加虚拟网卡、不改物理网卡地址）。\n只想扫特定网段时显式传 cidr。\n\n**仪器地址不是固定资产**（DHCP/网段/换口/串口号都会漂移）：本工具发现的\n结果会自动回写地址缓存，之后各专用工具不传 resource 也能连上；换了网段或\n发现工具报连接失败时，先重新跑一次本工具即可。",
+      "inputSchema": {
+        "properties": {
+          "cidr": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Cidr"
+          }
+        },
+        "title": "instr_discoverArguments",
+        "type": "object"
+      },
+      "outputSchema": {
+        "properties": {
+          "result": {
+            "title": "Result",
+            "type": "string"
+          }
+        },
+        "required": [
+          "result"
+        ],
+        "title": "instr_discoverOutput",
+        "type": "object"
+      }
+    },
+    {
+      "name": "instr_query",
+      "description": "通用 SCPI 查询——新设备零代码接入：拿到 resource 即可对照手册直发查询。\nresource: 完整 VISA 资源串（instr_discover 可得）；\ncmd: 单条查询命令，必须含 '?'（如 '*IDN?'、':VOLT:DC?'、'C1:BSWV WVTP?'）；\ntimeout_ms: IO 超时 500-30000，默认 5000。\n串口(ASRL)设备按默认 9600 波特（EmoeCalibrator 实测值），暂不支持改波特率。\n只读不留痕；写操作用 instr_write（有黑名单/confirm/审计三道护栏）。\n设备无响应有硬超时看门狗（下限 30s，覆盖 VISA 冷启动），离线资源不会冻结 MCP。\n\n护栏：`cmd` 里每条 `;` 分段**都必须是查询**——判据是\"命令头里带 '?'\"，\n**问号后允许带参数**（`:MEASure:ITEM? VPP,CHANnel1`、`:TRIGger:EDGE:LEVel? MAX`\n都是标准 SCPI 查询写法）。之所以逐段判而不是\"整条以 ? 结尾\"：SCPI 允许用 `;`\n串联多条命令，只查首尾会让 `\"*IDN?;*RST\"` 之类的写命令从查询口溜进去；\n命中的按 `forbidden` 拒绝。多命令消息要么全是查询，要么走 instr_write。",
+      "inputSchema": {
+        "properties": {
+          "resource": {
+            "title": "Resource",
+            "type": "string"
+          },
+          "cmd": {
+            "title": "Cmd",
+            "type": "string"
+          },
+          "timeout_ms": {
+            "default": 5000,
+            "title": "Timeout Ms",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "resource",
+          "cmd"
+        ],
+        "title": "instr_queryArguments",
+        "type": "object"
+      },
+      "outputSchema": {
+        "properties": {
+          "result": {
+            "title": "Result",
+            "type": "string"
+          }
+        },
+        "required": [
+          "result"
+        ],
+        "title": "instr_queryOutput",
+        "type": "object"
+      }
+    },
+    {
+      "name": "instr_write",
+      "description": "通用 SCPI 写——新设备零代码接入。⚠ 必须 confirm=True（raw 写权限大）。\n内置护栏（对应 AGENTS.md 铁律2/3 与安全红线）：\n1) 复位/存储覆写类（*RST/*SAV/*RCL/:SYST:RES|FACT|PRES，长短形式及中间缩写均拦）\n   一律拒绝（error_type=forbidden，confirm 也不放行）；\n2) 写前 drain 错误队列、写后逐条排空 SYST:ERR?，返回 syst_errors；\n3) readback_cmd 给定时自动回读（铁律3），如写 'VOLT 1' 后传 'VOLT?'；\n   readback_cmd 同样受黑名单约束且必须是**纯查询消息**（防从回读口偷发写命令）；\n4) 每次调用（含被拒绝的）落盘 TEST_DATA/common/mcp_scpi_audit_*.jsonl；\n   看门狗超时记 executed=\"unknown\"（命令可能已送达，须回读确认）；\n5) 离线/挂起资源硬超时看门狗，不会冻结 MCP。\n返回 result: {written, pre_errors, syst_errors, readback}。",
+      "inputSchema": {
+        "properties": {
+          "resource": {
+            "title": "Resource",
+            "type": "string"
+          },
+          "cmd": {
+            "title": "Cmd",
+            "type": "string"
+          },
+          "readback_cmd": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Readback Cmd"
+          },
+          "confirm": {
+            "default": false,
+            "title": "Confirm",
+            "type": "boolean"
+          },
+          "timeout_ms": {
+            "default": 5000,
+            "title": "Timeout Ms",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "resource",
+          "cmd"
+        ],
+        "title": "instr_writeArguments",
+        "type": "object"
+      },
+      "outputSchema": {
+        "properties": {
+          "result": {
+            "title": "Result",
+            "type": "string"
+          }
+        },
+        "required": [
+          "result"
+        ],
+        "title": "instr_writeOutput",
+        "type": "object"
+      }
+    },
+    {
+      "name": "ks3458a_acv",
+      "description": "3458A 交流电压配置（`ACV` / `SETACV` / `ACBAND`，可选 `NPLC`）。**改配置**。\n\n`sync=False` → `SETACV ANA`（模拟转换，默认）；`True` → `SETACV SYNC`（同步采样）。\n`band_lo`/`band_hi` 给定时下发 `ACBAND <lo>,<hi>`（Hz，**必须成对给**）。\n`nplc` 给定时下发 `NPLC <n>`。\n\n⚠ **这一组命令未验证**：参考实现（EmoeCalibrator）与 Keysight 官方样例里只有\nDCV 路径，`ACV`/`SETACV`/`ACBAND` 取自本项目任务书。真机首跑请对照手册并读返回体\n的 `errstr`。交流**读数**同样未验证，本服务器暂未暴露（库里有 `DMM3458A.read_acv()`）。\n详见 `docs/COMMANDS_3458A.md` 的「待手册核对项」。\n",
+      "inputSchema": {
+        "properties": {
+          "range": {
+            "default": 10.0,
+            "title": "Range",
+            "type": "number"
+          },
+          "band_lo": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Band Lo"
+          },
+          "band_hi": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Band Hi"
+          },
+          "sync": {
+            "default": false,
+            "title": "Sync",
+            "type": "boolean"
+          },
+          "nplc": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Nplc"
+          },
+          "resource": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Resource"
+          }
+        },
+        "title": "ks3458a_acvArguments",
+        "type": "object"
+      },
+      "outputSchema": {
+        "properties": {
+          "result": {
+            "title": "Result",
+            "type": "string"
+          }
+        },
+        "required": [
+          "result"
+        ],
+        "title": "ks3458a_acvOutput",
+        "type": "object"
+      }
+    },
+    {
+      "name": "ks3458a_autorange",
+      "description": "3458A 自动挡开关（`ARANGE ON` / `ARANGE OFF`，手册 p.160-161）。**改配置**。\n\n与 `ks3458a_configure(dcv_range=\"AUTO\")` 的区别：这条**只动自动挡开关**，\n不改档位数值与 NPLC。（手册 p.53-54 还提到 `ARANGE ONCE`：让自动挡选一次档位，\n需要时用 `instr_write` 显式下发白名单外的该命令——本工具不封装。）\n",
+      "inputSchema": {
+        "properties": {
+          "on": {
+            "default": true,
+            "title": "On",
+            "type": "boolean"
+          },
+          "resource": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Resource"
+          }
+        },
+        "title": "ks3458a_autorangeArguments",
+        "type": "object"
+      },
+      "outputSchema": {
+        "properties": {
+          "result": {
+            "title": "Result",
+            "type": "string"
+          }
+        },
+        "required": [
+          "result"
+        ],
+        "title": "ks3458a_autorangeOutput",
+        "type": "object"
+      }
+    },
+    {
+      "name": "ks3458a_burst",
+      "description": "3458A 高速二进制突发（Keysight 官方 100k rdg/s 配方）：一次触发取 n 个读数。\n\n配方（`data_format=\"SINT\"`）：`PRESET DIG` → [`DCV <range>`] → `MFORMAT/OFORMAT SINT`\n→ [`APER`] → [`TIMER <sample_interval_s>`] → `MEM OFF` → `NRDGS n` → `TRIG AUTO`\n→ `ISCALE?` → `TARM SYN` → 读 2n+2 字节，按 **2 字节大端有符号整数 × ISCALE** 解析。\n\n`data_format=\"DINT\"`：改用 `MFORMAT/OFORMAT DINT`（4 字节/读数），读 4n 字节后按\n**4 字节大端有符号整数 × ISCALE** 解析。**什么时候用 DINT**：手册（p.173）说\ndirect-sampling 下 DINT 的满量程是档位的 **500%**，SINT 只有约 120%——\n信号可能超过档位 120% 时必须用 DINT，否则 SINT 溢出。\n\n⚠ 这会**改设备配置**：`PRESET DIG` 把整组采样参数复位到数字档、功能切 DCV、\n内存关闭。跑完设备不再是原来的配置——要恢复请显式 `ks3458a_reset` 或\n`ks3458a_configure`（本工具归\"取数\"一栏，但别当成无副作用）。\n\n返回**摘要**（n/mean/stddev/min/max/iscale/格式/档位/采样间隔/字节数），不返回完整\n数组（防上下文爆炸）；要逐点数据用 `save_csv=True`，CSV 落在 `TEST_DATA/ks3458a/`。\n`sample_interval_s`/`dcv_range` 省略则不下发对应命令（用设备当前值）；\n`n` 上限 = 设备上限 16777215（手册 p.207），但 n 越大越慢、内存越大（SINT≈2n 字节）。\n",
+      "inputSchema": {
+        "properties": {
+          "n": {
+            "default": 1000,
+            "title": "N",
+            "type": "integer"
+          },
+          "sample_interval_s": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Sample Interval S"
+          },
+          "dcv_range": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Dcv Range"
+          },
+          "data_format": {
+            "default": "SINT",
+            "title": "Data Format",
+            "type": "string"
+          },
+          "save_csv": {
+            "default": false,
+            "title": "Save Csv",
+            "type": "boolean"
+          },
+          "resource": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Resource"
+          }
+        },
+        "title": "ks3458a_burstArguments",
+        "type": "object"
+      },
+      "outputSchema": {
+        "properties": {
+          "result": {
+            "title": "Result",
+            "type": "string"
+          }
+        },
+        "required": [
+          "result"
+        ],
+        "title": "ks3458a_burstOutput",
+        "type": "object"
+      }
+    },
+    {
+      "name": "ks3458a_configure",
+      "description": "3458A 设置直流档位与积分时间（`DCV <range>` / `NPLC <n>`）。**改配置**。\n\n**固定档 vs 自动挡**（手册 p.183-184）：\n· `dcv_range` 传数值（0.1/1/10/100/1000）→ **固定档**（写 `DCV <range>`）；\n· `dcv_range=\"AUTO\"` → **自动挡**（写 `DCV AUTO`，max_input=AUTO ⇒ autorange）。\n另有只动自动挡开关的 `ARANGE ON/OFF`（手册 p.160）——需要时用\n`ks3458a_autorange(on=True/False)`，它不碰档位数值/NPLC。\n\n10 V 档物理可到 12 V（手册 p.136/p.173：120% of range），但本库选档按 1.1 倍余量\n（保守），确知 ≤12 V 又要用 10 V 档就直接传 10。\n**换档/换配置后库内会自动丢弃第一次读数**（建立时间 + 自校准）——有意行为。\n\n写后**可回读复核**：`ks3458a_status` 的 `device` 里 `FUNC?`/`RANGE?`/`ARANGE?`/`NPLC?`\n是实测值（返回体同时给 `errstr`/`error_clear` 作为\"设备接受了\"的证据）。\n",
+      "inputSchema": {
+        "properties": {
+          "dcv_range": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              }
+            ],
+            "default": 10.0,
+            "title": "Dcv Range"
+          },
+          "nplc": {
+            "default": 10.0,
+            "title": "Nplc",
+            "type": "number"
+          },
+          "resource": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Resource"
+          }
+        },
+        "title": "ks3458a_configureArguments",
+        "type": "object"
+      },
+      "outputSchema": {
+        "properties": {
+          "result": {
+            "title": "Result",
+            "type": "string"
+          }
+        },
+        "required": [
+          "result"
+        ],
+        "title": "ks3458a_configureOutput",
+        "type": "object"
+      }
+    },
+    {
+      "name": "ks3458a_read",
+      "description": "3458A 单次直流电压读数（V）：`TARM SGL,1` 触发一次并回值（命令**不带问号**）。\n\n只读、**不改配置**：用设备**当前**的档位/NPLC/功能。要指定档位先 `ks3458a_configure`。\n读数非数值时按 device_error 报（**不返回 0 兜底**——错位数据比报错危险）。\n\n⚠ 连接时会做会话恢复（见 `ks3458a_status`），共享实验台上可能打断别人的 GPIB 采集。\n",
+      "inputSchema": {
+        "properties": {
+          "resource": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Resource"
+          }
+        },
+        "title": "ks3458a_readArguments",
+        "type": "object"
+      },
+      "outputSchema": {
+        "properties": {
+          "result": {
+            "title": "Result",
+            "type": "string"
+          }
+        },
+        "required": [
+          "result"
+        ],
+        "title": "ks3458a_readOutput",
+        "type": "object"
+      }
+    },
+    {
+      "name": "ks3458a_read_avg",
+      "description": "3458A 连续读 n 次取平均（降噪）。n 取 1~1000（本工具上限，防误传超大值）。\n\n逐次 `TARM SGL,1`，耗时随 n 线性增长（10 PLC 约 0.2 s/次 @50Hz）——\n调用墙钟上限 150 s，n 大时请自己算好；不够就分批读。\n",
+      "inputSchema": {
+        "properties": {
+          "n": {
+            "default": 10,
+            "title": "N",
+            "type": "integer"
+          },
+          "resource": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Resource"
+          }
+        },
+        "title": "ks3458a_read_avgArguments",
+        "type": "object"
+      },
+      "outputSchema": {
+        "properties": {
+          "result": {
+            "title": "Result",
+            "type": "string"
+          }
+        },
+        "required": [
+          "result"
+        ],
+        "title": "ks3458a_read_avgOutput",
+        "type": "object"
+      }
+    },
+    {
+      "name": "ks3458a_read_series",
+      "description": "3458A **一次会话内连续重复测量 n 次**（脚本/批量采集的主用工具）。\n\n与 `ks3458a_read_avg/read_stats` 的区别：返回**逐点序列**（可选落 CSV）与时长统计；\n与\"连续调 n 次 ks3458a_read\"相比省掉每次重连（每次 ~0.27 s），100 点 @NPLC 10\n从 ~70 s 降到 ~45 s。`interval_s` 是**点间间隔**（主机 sleep，非精密时序；要\n精密等间隔采样用 `ks3458a_burst` 的 TIMER）。\n\nn 取 1~1000；返回 `{n, values?/summary, csv?}`（`values` 仅在 n≤50 时内联，\n更大只回 summary——防上下文爆炸；要逐点数据用 `save_csv=True`）。\n",
+      "inputSchema": {
+        "properties": {
+          "n": {
+            "default": 10,
+            "title": "N",
+            "type": "integer"
+          },
+          "interval_s": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Interval S"
+          },
+          "save_csv": {
+            "default": false,
+            "title": "Save Csv",
+            "type": "boolean"
+          },
+          "resource": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Resource"
+          }
+        },
+        "title": "ks3458a_read_seriesArguments",
+        "type": "object"
+      },
+      "outputSchema": {
+        "properties": {
+          "result": {
+            "title": "Result",
+            "type": "string"
+          }
+        },
+        "required": [
+          "result"
+        ],
+        "title": "ks3458a_read_seriesOutput",
+        "type": "object"
+      }
+    },
+    {
+      "name": "ks3458a_read_stats",
+      "description": "3458A 连续读 n 次并给统计：`{n, mean, stddev, min, max}`（单位 V）。\n\nn 取 1~1000；stddev 是**样本标准差**（n-1 分母），n=1 时记 0.0。\n单次读数抖动明显时用这个而不是 `ks3458a_read`（结论看 mean ± stddev）。\n",
+      "inputSchema": {
+        "properties": {
+          "n": {
+            "default": 10,
+            "title": "N",
+            "type": "integer"
+          },
+          "resource": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Resource"
+          }
+        },
+        "title": "ks3458a_read_statsArguments",
+        "type": "object"
+      },
+      "outputSchema": {
+        "properties": {
+          "result": {
+            "title": "Result",
+            "type": "string"
+          }
+        },
+        "required": [
+          "result"
+        ],
+        "title": "ks3458a_read_statsOutput",
+        "type": "object"
+      }
+    },
+    {
+      "name": "ks3458a_reset",
+      "description": "3458A 复位：`RESET` + `END ALWAYS` + `INBUF ON`。\n\n⚠ **破坏性**：回到**开机测量配置**——档位/NPLC/功能/内存/触发等一并复位\n（完整影响范围待手册核对，见 `docs/COMMANDS_3458A.md`）。必须 `confirm=True`。\n\n这也是本库唯一的重置入口：MCP 连接默认 `reset_on_open=False`，**不会**每次调用\n偷偷复位仪表。`END ALWAYS`（每次读数置 EOI）与 `INBUF ON`（打开输入缓冲）是\n`TARM SGL` 单次读数配方的前置条件——缺了会把 GPIB 总线占住。\n",
+      "inputSchema": {
+        "properties": {
+          "confirm": {
+            "default": false,
+            "title": "Confirm",
+            "type": "boolean"
+          },
+          "resource": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Resource"
+          }
+        },
+        "title": "ks3458a_resetArguments",
+        "type": "object"
+      },
+      "outputSchema": {
+        "properties": {
+          "result": {
+            "title": "Result",
+            "type": "string"
+          }
+        },
+        "required": [
+          "result"
+        ],
+        "title": "ks3458a_resetOutput",
+        "type": "object"
+      }
+    },
+    {
+      "name": "ks3458a_status",
+      "description": "3458A 只读状态：身份（`ID?`）/ 错误串（`ERRSTR?`）/ 内部温度（`TEMP?`）\n+ 本会话跟踪的档位与 NPLC。\n\n两条如实说明：\n① `device` 里的档位/NPLC/功能/触发等是**设备回读**（`state()`，2026-09-23 本机实测\n   `FUNC?`/`RANGE?`/`NPLC?`/`TARM?`/`TRIG?` 等在 3458A 上均可用）；\n   `tracked` 仍是\"本会话下发过什么\"的记录，两者都给出、语义分开。\n② `TEMP?` 内部温度：2026-09-23 实测返回 `37.0`/`36.9`（数值，单位按 °C 采信）；\n   精度/选件要求仍未核对手册——取不到时只记 `temperature_error`。\n\n⚠ 本工具连接时会做一次**会话恢复**（IFC/Device Clear + 有限 drain +\nTARM/TRIG HOLD）+ **读前准备**（`END ALWAYS`/`INBUF ON`/`TRIG AUTO`）：上次会话若把表\n留在 free-run 或 TRIG HOLD，不处理就会读到错位数据 / `TARM SGL,1` 超时。\n代价是可能打断正在进行的 GPIB 采集（IFC/Device Clear 影响同总线设备）。\n",
+      "inputSchema": {
+        "properties": {
+          "resource": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Resource"
+          }
+        },
+        "title": "ks3458a_statusArguments",
+        "type": "object"
+      },
+      "outputSchema": {
+        "properties": {
+          "result": {
+            "title": "Result",
+            "type": "string"
+          }
+        },
+        "required": [
+          "result"
+        ],
+        "title": "ks3458a_statusOutput",
+        "type": "object"
+      }
+    },
+    {
+      "name": "ks3458a_unstick",
+      "description": "3458A **救砖**：`IFC` + clear + `RESET` + 读前准备（**移植自参考项目**）。\n\n什么时候用（两个特征之一）：\n  * 每条命令都\"回\"一个电压读数（`ID?` 回的是 `4.99E-01` 而不是 `HP3458A`）——\n    说明表进了 **Talk Only 模式**（前面板 `ADDRESS`=31，只讲不听；手册 p.159）；\n  * `ks3458a_status`/`ks3458a_read` 全部超时，普通恢复（Device Clear）停不下来。\n\n为什么必须是 IFC：Device Clear 只对\"听命令\"的设备有效；表在讲、不在听时，\n只有 **IFC（`viGpibSendIFC`，等价于参考项目 SICL 的 `igpibpulseifc`）** 能从总线层\n打断它，随后 `RESET` 才能被接收并退出 Talk Only（手册 p.159：Reset 或改地址）。\n\n顺序（逐条照 `EmoeCalibrator/Software/cal_tool/dmm_sicl.py::open()` 移植）：\n`IFC → clear → TARM/TRIG HOLD → RESET → clear → END ALWAYS/INBUF ON → ID?`\n\n⚠ **破坏性**：`RESET` 回到**开机测量配置**（档位/NPLC/功能/触发，手册 p.26 Table 5）\n→ 必须 `confirm=True`。返回体含 `idn`（救回来是 `HP3458A`）与一次电压读数，便于确认。\n",
+      "inputSchema": {
+        "properties": {
+          "confirm": {
+            "default": false,
+            "title": "Confirm",
+            "type": "boolean"
+          },
+          "resource": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Resource"
+          }
+        },
+        "title": "ks3458a_unstickArguments",
+        "type": "object"
+      },
+      "outputSchema": {
+        "properties": {
+          "result": {
+            "title": "Result",
+            "type": "string"
+          }
+        },
+        "required": [
+          "result"
+        ],
+        "title": "ks3458a_unstickOutput",
+        "type": "object"
+      }
+    },
+    {
+      "name": "mho_acquisition",
+      "description": "MHO 采集控制：action ∈ run（连续采集）/ stop（冻结，**RAW 读内存波形前必须**）/\nsingle（单次触发）/ force（强制触发一次）。\n\n⚠ stop 会冻结当前采集——共享实验台上可能打断他人的观察；run/single/force 同理\n会改变采集状态。仅改采集状态，不动通道档位/时基/触发配置。\n返回 {\"action\", \"trigger_status\"}（设备回读）。",
+      "inputSchema": {
+        "properties": {
+          "action": {
+            "title": "Action",
+            "type": "string"
+          },
+          "resource": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Resource"
+          }
+        },
+        "required": [
+          "action"
+        ],
+        "title": "mho_acquisitionArguments",
+        "type": "object"
+      },
+      "outputSchema": {
+        "properties": {
+          "result": {
+            "title": "Result",
+            "type": "string"
+          }
+        },
+        "required": [
+          "result"
+        ],
+        "title": "mho_acquisitionOutput",
+        "type": "object"
+      }
+    },
+    {
+      "name": "mho_autoset",
+      "description": "MHO 一键自动设置 `:AUToset`（手册 3.2.1）。⚠ **全局破坏性**：会重新调整\n**所有**通道的垂直档位、水平时基与触发配置——多信号实验台上会毁掉别人已调好的\n通道。必须 confirm=True；且确认\"信号简单周期性 + 无其他在用通道\"再用。\n无波形时的推荐顺序：先 mho_status / mho_screenshot 看真相，再决定是否 autoset。",
+      "inputSchema": {
+        "properties": {
+          "confirm": {
+            "default": false,
+            "title": "Confirm",
+            "type": "boolean"
+          },
+          "resource": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Resource"
+          }
+        },
+        "title": "mho_autosetArguments",
+        "type": "object"
+      },
+      "outputSchema": {
+        "properties": {
+          "result": {
+            "title": "Result",
+            "type": "string"
+          }
+        },
+        "required": [
+          "result"
+        ],
+        "title": "mho_autosetOutput",
+        "type": "object"
+      }
+    },
+    {
+      "name": "mho_channel",
+      "description": "MHO 通道垂直参数设置（档位/偏置/耦合/探头比/显示）——**写后回读验证**。\n\n三条实测设备行为已在工具内处理（证据 docs/tool_optimization_20260915.md §P1-3）：\n① **屏幕中心电压 = −offset**（不是 +offset；按 +offset 理解会把波形顶出屏幕）；\n② 改 scale 会**等比缩放 offset**（设备行为，保持波形屏幕位置）→ 固定按\n   **scale → offset** 顺序写；只写 scale 时，偏置的变化会写进 reasons；\n③ 通道 OFF 时写 SCALe/OFFSet 被**静默忽略**（无错误码）→ 需要写垂直参数时自动\n   先开通道（reasons 里说明）；display=False 在参数写完后才关。\n偏置有硬件量程上限（实测本机 ±20 V，与档位无关）：被钳制时 `adjusted` 非空 +\nreasons 说明，不混成成功。\n返回 {requested, before, actual, adjusted, reasons, window}，window=[bottom, top]。\n**只影响指定通道**——多信号实验台上不动别人的通道。",
+      "inputSchema": {
+        "properties": {
+          "ch": {
+            "title": "Ch",
+            "type": "integer"
+          },
+          "scale": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Scale"
+          },
+          "offset": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Offset"
+          },
+          "coupling": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Coupling"
+          },
+          "probe": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Probe"
+          },
+          "display": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Display"
+          },
+          "resource": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Resource"
+          }
+        },
+        "required": [
+          "ch"
+        ],
+        "title": "mho_channelArguments",
+        "type": "object"
+      },
+      "outputSchema": {
+        "properties": {
+          "result": {
+            "title": "Result",
+            "type": "string"
+          }
+        },
+        "required": [
+          "result"
+        ],
+        "title": "mho_channelOutput",
+        "type": "object"
+      }
+    },
+    {
+      "name": "mho_fit_channel",
+      "description": "MHO **单通道**垂直自动定标/居中——只动该通道的 scale/offset（不是全局 autoset）。\n\n判据（docs/示波器自动定标设计-2026-09-15.md §1）：① 可测（读数非 9.9E37）\n② 不贴边（margin 带内）③ 占屏率 ∈ [0.4, 0.9]（目标 occupancy，默认 0.7）。\n算法（同文档 §2）：通道必须已开 → 不可测/贴边则沿 1-2-5 逐档放大 →\nscale = span/(occupancy×8 格)、offset = −中心 → **先 scale 后 offset** 写回 → 重测验证。\n平直/无信号 → 判 `flat`：**保持档位**、按均值居中（不猜档位，猜了就是假精度）；\n超出量程/未收敛 → ok=false + reason + trace 证据，不假装成功。\n返回 before/after/measured/occupancy/margin_ok/adjusted/reasons/trace/warnings。\n与 mho_autoset 的区别：autoset 是**全局破坏性**的；本工具只动一个通道、每步可读可解释。",
+      "inputSchema": {
+        "properties": {
+          "ch": {
+            "title": "Ch",
+            "type": "integer"
+          },
+          "occupancy": {
+            "default": 0.7,
+            "title": "Occupancy",
+            "type": "number"
+          },
+          "margin": {
+            "default": 0.08,
+            "title": "Margin",
+            "type": "number"
+          },
+          "max_iter": {
+            "default": 12,
+            "title": "Max Iter",
+            "type": "integer"
+          },
+          "resource": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Resource"
+          }
+        },
+        "required": [
+          "ch"
+        ],
+        "title": "mho_fit_channelArguments",
+        "type": "object"
+      },
+      "outputSchema": {
+        "properties": {
+          "result": {
+            "title": "Result",
+            "type": "string"
+          }
+        },
+        "required": [
+          "result"
+        ],
+        "title": "mho_fit_channelOutput",
+        "type": "object"
+      }
+    },
+    {
+      "name": "mho_get_waveform",
+      "description": "MHO 读取通道波形（电压 + 时间轴），返回**摘要** + 可选 CSV 路径。\n\nmode: NORMal=屏幕波形（**1~1000 点**，手册 3.28.4）/ MAXimum / RAW=内存波形\n（RAW 要求示波器处于 STOP 态，否则报 device_error 并提示先 mho_acquisition(\"stop\")）；\nfmt: BYTE(8bit)/WORD(16bit)/ASCii；points 受模式上限约束（超限报 param_validation）。\nsave_csv=True 存 CSV 到 TEST_DATA/mho/ 并返回路径（不返回完整数组防上下文爆炸）。\n电压换算 (raw-YORigin-YREFerence)*YINCrement，时间轴 xorigin+i*xincrement，\n与 :MEASure:ITEM? 交叉验证一致；分析频率请用 FFT（朴素过零对调幅信号会误判）。",
+      "inputSchema": {
+        "properties": {
+          "ch": {
+            "default": 1,
+            "title": "Ch",
+            "type": "integer"
+          },
+          "points": {
+            "default": 1000,
+            "title": "Points",
+            "type": "integer"
+          },
+          "mode": {
+            "default": "NORMal",
+            "title": "Mode",
+            "type": "string"
+          },
+          "fmt": {
+            "default": "BYTE",
+            "title": "Fmt",
+            "type": "string"
+          },
+          "save_csv": {
+            "default": false,
+            "title": "Save Csv",
+            "type": "boolean"
+          },
+          "resource": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Resource"
+          }
+        },
+        "title": "mho_get_waveformArguments",
+        "type": "object"
+      },
+      "outputSchema": {
+        "properties": {
+          "result": {
+            "title": "Result",
+            "type": "string"
+          }
+        },
+        "required": [
+          "result"
+        ],
+        "title": "mho_get_waveformOutput",
+        "type": "object"
+      }
+    },
+    {
+      "name": "mho_measure_item",
+      "description": "MHO 测量查询（手册 3.17.2 参数表）。\n\n单信源 item: VMAX/VMIN/VPP/VTOP/VBASe/VAMP/VAVG/VRMS/OVERshoot/PREShoot/\nMARea/MPARea/PERiod/FREQuency/RTIMe/FTIMe/PWIDth/NWIDth/PDUTy/NDUTy/\nTVMAX/TVMIN/PSLewrate/NSLewrate/VUPPer/VMID/VLOWer/PVRMs/PPULses/NPULses/\nPEDGes/NEDGes/ACRMs；ch=1-4。\n双信源 item（需同时给 ch2）: RRDelay/RFDelay/FRDelay/FFDelay（延迟）、\nRRPHase/RFPHase/FRPHase/FFPHase（相位，四组合=先 A 后 B 的沿型）。\n\n**samples>1**：主机侧连读 N 次（≤200）返回 mean/min/max/stddev/count/invalid——\n单次读数抖动明显，结论要用均值（现场实测同状态连读得 7.4747/7.4749/7.4749 V）；\n无效读数单独计数，不混进统计。\n**rails=True**：额外读**顶轨/底轨**（VTOP/VBASe）并**上下分别**判断是否贴窗口边沿\n（`top_touching` / `bottom_touching` / `edges_touching` + 各自 `hints`）；\n顶贴与底贴处理方向相反（顶贴→offset 调更负；底贴→offset 调更大），故分开报。\n未标定格数的家族不做贴边判定（`note` 说明，不猜）。\n**无有效读数时分类报因**（error_type=device_error，另带 suspicious/hint/window/\nevidence）：`channel_off` 通道显示关 / `off_screen` 迹线在窗口外 / `near_edge`\n极值贴窗口边沿（**部分削顶时会给出\"看着合理的假值\"**，必须换档；附\n`edges_touching` 与 `edge_hints` 分顶/底）/ `few_edges`\n屏内不足 2 个周期（时间/边沿类，给出时基建议）/ `no_signal`。\n`probe_x` 与 warnings：探头比非 1X 时幅度类读数为**探头端**电压（频率不受影响）。\n⚠ 形态判断请用 mho_screenshot 看图（设备读数在超屏时不可信）。",
+      "inputSchema": {
+        "properties": {
+          "item": {
+            "title": "Item",
+            "type": "string"
+          },
+          "ch": {
+            "default": 1,
+            "title": "Ch",
+            "type": "integer"
+          },
+          "ch2": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Ch2"
+          },
+          "samples": {
+            "default": 1,
+            "title": "Samples",
+            "type": "integer"
+          },
+          "rails": {
+            "default": false,
+            "title": "Rails",
+            "type": "boolean"
+          },
+          "resource": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Resource"
+          }
+        },
+        "required": [
+          "item"
+        ],
+        "title": "mho_measure_itemArguments",
+        "type": "object"
+      },
+      "outputSchema": {
+        "properties": {
+          "result": {
+            "title": "Result",
+            "type": "string"
+          }
+        },
+        "required": [
+          "result"
+        ],
+        "title": "mho_measure_itemOutput",
+        "type": "object"
+      }
+    },
+    {
+      "name": "mho_screenshot",
+      "description": "MHO 截屏并保存 PNG，返回文件路径——**该 PNG 可直接用 Read 工具查看**\n（波形形态/有无信号/削顶/居中/菜单/测量栏/网络配置）。\n\nRIGOL 原生回 PNG 位图流（`:DISPlay:DATA? PNG`），无需像 SDS 那样解析 BMP。\n设备测量值超屏时被钳制不可信，截图才是物理真相（AGENTS.md 铁律#9）。",
+      "inputSchema": {
+        "properties": {
+          "resource": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Resource"
+          }
+        },
+        "title": "mho_screenshotArguments",
+        "type": "object"
+      },
+      "outputSchema": {
+        "properties": {
+          "result": {
+            "title": "Result",
+            "type": "string"
+          }
+        },
+        "required": [
+          "result"
+        ],
+        "title": "mho_screenshotOutput",
+        "type": "object"
+      }
+    },
+    {
+      "name": "mho_status",
+      "description": "MHO 示波器只读快照：IDN/SCPI 版本/触发状态与类型/采集方式/存储深度/采样率/\n时基/边沿触发源与电平/CH1-4 开关·耦合·档位·偏移·探头比。\n注意本系列采样率随开启通道数下降（1~2ch 4GSa/s、3~4ch 1GSa/s）。",
+      "inputSchema": {
+        "properties": {
+          "resource": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Resource"
+          }
+        },
+        "title": "mho_statusArguments",
+        "type": "object"
+      },
+      "outputSchema": {
+        "properties": {
+          "result": {
+            "title": "Result",
+            "type": "string"
+          }
+        },
+        "required": [
+          "result"
+        ],
+        "title": "mho_statusOutput",
+        "type": "object"
+      }
+    },
+    {
+      "name": "mho_timebase",
+      "description": "MHO 水平时基设置（s/div 与水平位移）——**两者都回读**（只回读被写的那一个等于没回读）。\n\n⚠ 时基是**全局**的：影响所有通道的显示与\"屏内几个周期\"，共享实验台上会改变别人的观察。\n屏内不足 2 个周期时频率类测量读不到（现场：20 µs/div 看 5 kHz 读不到，\n100 µs/div 立刻读到 4.9993 kHz——是窗口不够，不是精度问题）。\n返回 {requested, before, actual, adjusted, reasons, window_t}。",
+      "inputSchema": {
+        "properties": {
+          "scale": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Scale"
+          },
+          "offset": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Offset"
+          },
+          "resource": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Resource"
+          }
+        },
+        "title": "mho_timebaseArguments",
+        "type": "object"
+      },
+      "outputSchema": {
+        "properties": {
+          "result": {
+            "title": "Result",
+            "type": "string"
+          }
+        },
+        "required": [
+          "result"
+        ],
+        "title": "mho_timebaseOutput",
+        "type": "object"
+      }
+    },
+    {
+      "name": "mho_trigger",
+      "description": "MHO 触发设置（边沿源/电平/斜率、触发模式/扫描）——写后回读，枚举对照手册校验。\n\nslope ∈ POSitive/NEGative/RFALl（第三态两系列都是 RFALl）；\nmode ∈ 手册 3.27.1 的 20 项（EDGE/PULSe/…/IIS/FLEXray/M1553）；\nsweep ∈ AUTO/NORMal/SINGle。下发顺序 mode → sweep → 源/斜率/电平。\n⚠ 触发模式/扫描是**全局**设定，共享实验台上会影响他人观察。\n返回 {requested, before, actual, adjusted, reasons}；电平受限时 reasons 里带该通道窗口范围。",
+      "inputSchema": {
+        "properties": {
+          "source": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Source"
+          },
+          "level": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Level"
+          },
+          "slope": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Slope"
+          },
+          "mode": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Mode"
+          },
+          "sweep": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Sweep"
+          },
+          "resource": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Resource"
+          }
+        },
+        "title": "mho_triggerArguments",
+        "type": "object"
+      },
+      "outputSchema": {
+        "properties": {
+          "result": {
+            "title": "Result",
+            "type": "string"
+          }
+        },
+        "required": [
+          "result"
+        ],
+        "title": "mho_triggerOutput",
+        "type": "object"
+      }
+    },
+    {
+      "name": "psu_mode",
+      "description": "DH1766 输出模式查询（只读，轻量）：NORM（正常三路独立）/TRAC（跟踪：\nCH2 跟随 CH1 输出同等值负电压）/SERI（串联）/PARA（并联）。\n操作电源前先查模式——CH2 负压是跟踪模式跟随，不是固定负轨（手册§3.8）。\n需要完整状态用 psu_status。",
+      "inputSchema": {
+        "properties": {
+          "resource": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Resource"
+          }
+        },
+        "title": "psu_modeArguments",
+        "type": "object"
+      },
+      "outputSchema": {
+        "properties": {
+          "result": {
+            "title": "Result",
+            "type": "string"
+          }
+        },
+        "required": [
+          "result"
+        ],
+        "title": "psu_modeOutput",
+        "type": "object"
+      }
+    },
+    {
+      "name": "psu_output",
+      "description": "DH1766 单通道输出开关。⚠ 开/关都需 confirm=True（关闭可能中断供电，\n影响被测电路/他人实验，同样是状态变更）。\n\n**expect_mode 必填**：调用方声明的当前工作模式（NORM/TRAC/SERI/PARA），\n仅校验不设置——与实际不符立即拒绝并回传当前模式（防拓扑误判：TRAC 下\nCH2 跟随 CH1 输出负压、SERI/PARA 通道合并）。建议先调 psu_status。\n",
+      "inputSchema": {
+        "properties": {
+          "ch": {
+            "title": "Ch",
+            "type": "integer"
+          },
+          "on": {
+            "title": "On",
+            "type": "boolean"
+          },
+          "expect_mode": {
+            "title": "Expect Mode",
+            "type": "string"
+          },
+          "confirm": {
+            "default": false,
+            "title": "Confirm",
+            "type": "boolean"
+          },
+          "resource": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Resource"
+          }
+        },
+        "required": [
+          "ch",
+          "on",
+          "expect_mode"
+        ],
+        "title": "psu_outputArguments",
+        "type": "object"
+      },
+      "outputSchema": {
+        "properties": {
+          "result": {
+            "title": "Result",
+            "type": "string"
+          }
+        },
+        "required": [
+          "result"
+        ],
+        "title": "psu_outputOutput",
+        "type": "object"
+      }
+    },
+    {
+      "name": "psu_power_cycle",
+      "description": "DH1766 上下电循环：关断→延迟→开启→延迟，重复 cycles 次。\n\n⚠ **需 confirm=True**——授权同 psu_output：① 用户本轮明确要求做上下电/循环，\n或 ② 用户明确声明独占使用；否则先向用户确认（可能打断他人实验/板子供电）。\n\n**expect_mode 必填**（仅校验，不符拒绝）。\noff_delay_s 默认 1s（需保证下电放电时调大，如实测电容残留需 ≥6s）；\non_delay_s 默认 1s；cycles 默认 1。延迟由主机 sleep 控制，不精准，\n用于保证放电/上电时序（非精密时序）。\n返回 {\"cycles\",\"records\":[每次循环延迟与电压],\"after\"}。\n",
+      "inputSchema": {
+        "properties": {
+          "ch": {
+            "title": "Ch",
+            "type": "integer"
+          },
+          "expect_mode": {
+            "title": "Expect Mode",
+            "type": "string"
+          },
+          "cycles": {
+            "default": 1,
+            "title": "Cycles",
+            "type": "integer"
+          },
+          "off_delay_s": {
+            "default": 1.0,
+            "title": "Off Delay S",
+            "type": "number"
+          },
+          "on_delay_s": {
+            "default": 1.0,
+            "title": "On Delay S",
+            "type": "number"
+          },
+          "confirm": {
+            "default": false,
+            "title": "Confirm",
+            "type": "boolean"
+          },
+          "resource": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Resource"
+          }
+        },
+        "required": [
+          "ch",
+          "expect_mode"
+        ],
+        "title": "psu_power_cycleArguments",
+        "type": "object"
+      },
+      "outputSchema": {
+        "properties": {
+          "result": {
+            "title": "Result",
+            "type": "string"
+          }
+        },
+        "required": [
+          "result"
+        ],
+        "title": "psu_power_cycleOutput",
+        "type": "object"
+      }
+    },
+    {
+      "name": "psu_set_mode",
+      "description": "DH1766 设置输出模式：NORM/TRAC/SERI/PARA（写后回读比对）。\n⚠ 继电器联动拓扑变化：输出必须全关，否则直接拒绝（库内无条件强制）。\n切换范例：跟踪 ±12V 供电用 TRAC；单路独立用 NORM。",
+      "inputSchema": {
+        "properties": {
+          "mode": {
+            "title": "Mode",
+            "type": "string"
+          },
+          "resource": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Resource"
+          }
+        },
+        "required": [
+          "mode"
+        ],
+        "title": "psu_set_modeArguments",
+        "type": "object"
+      },
+      "outputSchema": {
+        "properties": {
+          "result": {
+            "title": "Result",
+            "type": "string"
+          }
+        },
+        "required": [
+          "result"
+        ],
+        "title": "psu_set_modeOutput",
+        "type": "object"
+      }
+    },
+    {
+      "name": "psu_status",
+      "description": "DH1766 只读状态总览（**操作电源前先调这个**）：三路(CH1-3)电压/电流/功率/\n设定值/OVP/OCP/输出状态/**输出模式**/耦合，并附**安全检查**：\nsafe + warnings（TRAC 负压跟随 / OVP·OCP ≤ 设定值 / 已有通道带电 /\nQUES 寄存器告警 / 通道耦合）。\n（原 psu_measure 的电压电流读数已并入本工具，原 psu_pre_check 的安全判断\n亦并入 warnings。）",
+      "inputSchema": {
+        "properties": {
+          "resource": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Resource"
+          }
+        },
+        "title": "psu_statusArguments",
+        "type": "object"
+      },
+      "outputSchema": {
+        "properties": {
+          "result": {
+            "title": "Result",
+            "type": "string"
+          }
+        },
+        "required": [
+          "result"
+        ],
+        "title": "psu_statusOutput",
+        "type": "object"
+      }
+    },
+    {
+      "name": "sdg_counter",
+      "description": "SDG 内置频率计（FCNT，手册 §3.24）。on=None 仅查询；True/False 先开关再查。\n\n返回 STATE/FRQ/PW/NW/DUTY/FRQDEV/REFQ/TRG/MODE/HFR/TYPE。\n⚠ 命令集因系列而异：SDG2000X 用 FCNT（本机实测），SDG7000A 才用\n`:SENSe:COUNTer:*`。输入口无信号时 FRQ=0HZ（正常）。\n",
+      "inputSchema": {
+        "properties": {
+          "on": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "On"
+          },
+          "resource": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Resource"
+          }
+        },
+        "title": "sdg_counterArguments",
+        "type": "object"
+      },
+      "outputSchema": {
+        "properties": {
+          "result": {
+            "title": "Result",
+            "type": "string"
+          }
+        },
+        "required": [
+          "result"
+        ],
+        "title": "sdg_counterOutput",
+        "type": "object"
+      }
+    },
+    {
+      "name": "sdg_output",
+      "description": "SDG 开关通道 ch(1-2) 输出。⚠ 开/关都需 confirm=True（关闭可能打断\n正在进行的测试或他人实验，同样是状态变更）。\n\n**expect_load 必填**：调用方声明的当前负载设置（HZ=高阻 / 50=50Ω），\n仅校验不设置——与实际不符立即拒绝并回传实际值。SDG 的 AMP 设定与负载\n强相关（HZ 下即 Vpp，50Ω 下实际幅度减半），输出前必须声明避免误判。\n建议先 sdg_status 查看。\n",
+      "inputSchema": {
+        "properties": {
+          "ch": {
+            "title": "Ch",
+            "type": "integer"
+          },
+          "on": {
+            "title": "On",
+            "type": "boolean"
+          },
+          "expect_load": {
+            "title": "Expect Load",
+            "type": "string"
+          },
+          "confirm": {
+            "default": false,
+            "title": "Confirm",
+            "type": "boolean"
+          },
+          "resource": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Resource"
+          }
+        },
+        "required": [
+          "ch",
+          "on",
+          "expect_load"
+        ],
+        "title": "sdg_outputArguments",
+        "type": "object"
+      },
+      "outputSchema": {
+        "properties": {
+          "result": {
+            "title": "Result",
+            "type": "string"
+          }
+        },
+        "required": [
+          "result"
+        ],
+        "title": "sdg_outputOutput",
+        "type": "object"
+      }
+    },
+    {
+      "name": "sdg_set_wave",
+      "description": "SDG 设置通道 ch(1-2) 波形参数。wvtp: SINE/SQUARE/RAMP/PULSE/NOISE/DC；\nfreq_hz 单位 Hz；amp_v 单位 V（高阻负载下即 Vpp）；offset_v 单位 V。\n注意：不改变输出开关状态；输出开启时参数实时生效。返回含设备回读。",
+      "inputSchema": {
+        "properties": {
+          "ch": {
+            "title": "Ch",
+            "type": "integer"
+          },
+          "wvtp": {
+            "title": "Wvtp",
+            "type": "string"
+          },
+          "freq_hz": {
+            "title": "Freq Hz",
+            "type": "number"
+          },
+          "amp_v": {
+            "title": "Amp V",
+            "type": "number"
+          },
+          "offset_v": {
+            "default": 0.0,
+            "title": "Offset V",
+            "type": "number"
+          },
+          "resource": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Resource"
+          }
+        },
+        "required": [
+          "ch",
+          "wvtp",
+          "freq_hz",
+          "amp_v"
+        ],
+        "title": "sdg_set_waveArguments",
+        "type": "object"
+      },
+      "outputSchema": {
+        "properties": {
+          "result": {
+            "title": "Result",
+            "type": "string"
+          }
+        },
+        "required": [
+          "result"
+        ],
+        "title": "sdg_set_waveOutput",
+        "type": "object"
+      }
+    },
+    {
+      "name": "sdg_status",
+      "description": "SDG 信号源快照：输出状态/波形参数/调制（两通道）。",
+      "inputSchema": {
+        "properties": {
+          "resource": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Resource"
+          }
+        },
+        "title": "sdg_statusArguments",
+        "type": "object"
+      },
+      "outputSchema": {
+        "properties": {
+          "result": {
+            "title": "Result",
+            "type": "string"
+          }
+        },
+        "required": [
+          "result"
+        ],
+        "title": "sdg_statusOutput",
+        "type": "object"
+      }
+    },
+    {
+      "name": "sds_auto_scale",
+      "description": "SDS 自动定标让通道 ch(1-4) 波形正确显示。\nuse_autoset=True 为破坏性 :AUToset（重置所有通道档位/时基/触发），仅限\n简单周期信号且无其他已调好通道时显式启用；默认 SCPI 闭环只动目标通道。返回 actions/vpp/freq/adjusted。",
+      "inputSchema": {
+        "properties": {
+          "ch": {
+            "title": "Ch",
+            "type": "integer"
+          },
+          "use_autoset": {
+            "default": false,
+            "title": "Use Autoset",
+            "type": "boolean"
+          },
+          "resource": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Resource"
+          }
+        },
+        "required": [
+          "ch"
+        ],
+        "title": "sds_auto_scaleArguments",
+        "type": "object"
+      },
+      "outputSchema": {
+        "properties": {
+          "result": {
+            "title": "Result",
+            "type": "string"
+          }
+        },
+        "required": [
+          "result"
+        ],
+        "title": "sds_auto_scaleOutput",
+        "type": "object"
+      }
+    },
+    {
+      "name": "sds_diagnose",
+      "description": "SDS 触发链路诊断：模式/状态/源/电平/时基（无波形时第一步）。",
+      "inputSchema": {
+        "properties": {
+          "resource": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Resource"
+          }
+        },
+        "title": "sds_diagnoseArguments",
+        "type": "object"
+      },
+      "outputSchema": {
+        "properties": {
+          "result": {
+            "title": "Result",
+            "type": "string"
+          }
+        },
+        "required": [
+          "result"
+        ],
+        "title": "sds_diagnoseOutput",
+        "type": "object"
+      }
+    },
+    {
+      "name": "sds_get_waveform",
+      "description": "SDS 读取通道波形数据（电压 + 时间轴，2026-09-09 经 FFT 交叉验证可信）。\n\nch=1-4；points 读取点数（默认 50000，受设备 ACQ:POIN? 上限约束；过大很慢）。\nsave_csv=True 时存 CSV 到 TEST_DATA/common/ 并返回路径。\n为避免上下文爆炸，返回**摘要**（点数/时间窗/Vpp/interval/档位）+ 可选 CSV 路径，\n不返回完整数组；需要逐点数据请开 save_csv。\n\n时间轴可信性依据：interval 与 ACQ:SRAT? 一致，FFT 主频与设备硬件测量吻合\n（注意：分析频率请用 FFT，朴素过零对调幅信号会误判）。\n",
+      "inputSchema": {
+        "properties": {
+          "ch": {
+            "default": 2,
+            "title": "Ch",
+            "type": "integer"
+          },
+          "points": {
+            "default": 50000,
+            "title": "Points",
+            "type": "integer"
+          },
+          "save_csv": {
+            "default": false,
+            "title": "Save Csv",
+            "type": "boolean"
+          },
+          "resource": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Resource"
+          }
+        },
+        "title": "sds_get_waveformArguments",
+        "type": "object"
+      },
+      "outputSchema": {
+        "properties": {
+          "result": {
+            "title": "Result",
+            "type": "string"
+          }
+        },
+        "required": [
+          "result"
+        ],
+        "title": "sds_get_waveformOutput",
+        "type": "object"
+      }
+    },
+    {
+      "name": "sds_meas_display",
+      "description": "SDS 测量显示与幅值策略（手册 p.174-181）。\n\nrdisplay: 结果显示样式 EMBedded（内嵌压缩波形）|FLOating（悬浮）；\nstyle: 统计显示模式 M1（垂直，含直方图）|M2（水平）；\nlinenumber: M2 模式显示测量项总数 [1,12]；\nstrategy: 幅值计算策略 AUTO|MANual；\nastra_base/astra_top: 手动策略的底端/顶端方式 HISTogram|MAX。\n全省略 = 查询当前全部设置。\n",
+      "inputSchema": {
+        "properties": {
+          "rdisplay": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Rdisplay"
+          },
+          "style": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Style"
+          },
+          "linenumber": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Linenumber"
+          },
+          "strategy": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Strategy"
+          },
+          "astra_base": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Astra Base"
+          },
+          "astra_top": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Astra Top"
+          },
+          "resource": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Resource"
+          }
+        },
+        "title": "sds_meas_displayArguments",
+        "type": "object"
+      },
+      "outputSchema": {
+        "properties": {
+          "result": {
+            "title": "Result",
+            "type": "string"
+          }
+        },
+        "required": [
+          "result"
+        ],
+        "title": "sds_meas_displayOutput",
+        "type": "object"
+      }
+    },
+    {
+      "name": "sds_meas_dtime",
+      "description": "SDS 延迟测量（ΔTime）配置/查询（手册 p.176-178）。index=1-4。\n\nedge1/edge2: 沿序号（-1=最后一个沿）；slope1/slope2: POSitive|NEGative；\nthreshold1/threshold2: 沿阈值（V 或百分比，依测量阈值类型）。\n全省略 = 查询该 ΔTime 的六项配置。\n",
+      "inputSchema": {
+        "properties": {
+          "index": {
+            "default": 1,
+            "title": "Index",
+            "type": "integer"
+          },
+          "edge1": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Edge1"
+          },
+          "edge2": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Edge2"
+          },
+          "slope1": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Slope1"
+          },
+          "slope2": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Slope2"
+          },
+          "threshold1": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Threshold1"
+          },
+          "threshold2": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Threshold2"
+          },
+          "resource": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Resource"
+          }
+        },
+        "title": "sds_meas_dtimeArguments",
+        "type": "object"
+      },
+      "outputSchema": {
+        "properties": {
+          "result": {
+            "title": "Result",
+            "type": "string"
+          }
+        },
+        "required": [
+          "result"
+        ],
+        "title": "sds_meas_dtimeOutput",
+        "type": "object"
+      }
+    },
+    {
+      "name": "sds_meas_gate",
+      "description": "SDS 测量门限（手册 p.179-180）：只统计 GA~GB 窗口内的波形。\n\non: 门限开关；ga/gb: 门限位置（秒，相对触发的水平位置，ga≤gb）。\n全部省略 = 查询当前门限开关与位置。\n",
+      "inputSchema": {
+        "properties": {
+          "on": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "On"
+          },
+          "ga": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Ga"
+          },
+          "gb": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Gb"
+          },
+          "resource": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Resource"
+          }
+        },
+        "title": "sds_meas_gateArguments",
+        "type": "object"
+      },
+      "outputSchema": {
+        "properties": {
+          "result": {
+            "title": "Result",
+            "type": "string"
+          }
+        },
+        "required": [
+          "result"
+        ],
+        "title": "sds_meas_gateOutput",
+        "type": "object"
+      }
+    },
+    {
+      "name": "sds_meas_statistics",
+      "description": "SDS 高级测量统计（手册 p.166-174）。\n\n配置：on=统计开关；max_count=最大统计次数 [0,1024]（0=无限，有限制时\n历史统计才有效）；histogram=直方图开关；reset=True 重置统计结果。\n查询：给 slot（P1-P12）则返回该槽统计，which=ALL|CURRent|MEAN|MAXimum|\nMINimum|STDev|COUNt（ALL 返回完整串）。\n全省略 = 返回统计配置。\n",
+      "inputSchema": {
+        "properties": {
+          "on": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "On"
+          },
+          "max_count": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Max Count"
+          },
+          "histogram": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Histogram"
+          },
+          "reset": {
+            "default": false,
+            "title": "Reset",
+            "type": "boolean"
+          },
+          "slot": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Slot"
+          },
+          "which": {
+            "default": "ALL",
+            "title": "Which",
+            "type": "string"
+          },
+          "resource": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Resource"
+          }
+        },
+        "title": "sds_meas_statisticsArguments",
+        "type": "object"
+      },
+      "outputSchema": {
+        "properties": {
+          "result": {
+            "title": "Result",
+            "type": "string"
+          }
+        },
+        "required": [
+          "result"
+        ],
+        "title": "sds_meas_statisticsOutput",
+        "type": "object"
+      }
+    },
+    {
+      "name": "sds_meas_threshold",
+      "description": "SDS 测量阈值配置/查询（手册 p.183-185）——所有边沿类测量的判据基础。\n\nsource: 阈值源（C1-C4/F1/M1/REF A-D…）；thr_type: PERCent|ABSolute；\nabsolute: \"high,mid,low\" 绝对阈值（V，如 \"3,1,-1.5\"）；\npercent: \"high,mid,low\" 百分比（整型，high∈[3,99]/mid∈[2,98]/low∈[1,97]）。\n全部省略 = 查询当前配置。绝对阈值取决于档位/位移/探头系数，设置前先设好。\n",
+      "inputSchema": {
+        "properties": {
+          "source": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Source"
+          },
+          "thr_type": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Thr Type"
+          },
+          "absolute": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Absolute"
+          },
+          "percent": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Percent"
+          },
+          "resource": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Resource"
+          }
+        },
+        "title": "sds_meas_thresholdArguments",
+        "type": "object"
+      },
+      "outputSchema": {
+        "properties": {
+          "result": {
+            "title": "Result",
+            "type": "string"
+          }
+        },
+        "required": [
+          "result"
+        ],
+        "title": "sds_meas_thresholdOutput",
+        "type": "object"
+      }
+    },
+    {
+      "name": "sds_measure",
+      "description": "SDS 单次测量（SIMPLE 模式，自动切模式+设信源）。ch=1-4。\nitem 枚举（SIMPle:ITEM 表，51 项全支持）：PKPK/MAX/MIN/AMPL/TOP/BASE/\nLEVELX/CMEAN/MEAN/STDEV/VSTD/RMS/CRMS/MEDIAN/CMEDIAN/OVSN/FPRE/OVSP/\nRPRE/ULOWer/PER/FREQ/TMAX/TMIN/PWID/NWID/DUTY/NDUTY/WID/NBWID/DELAY/\nTIMEL/RISE/FALL/RISE20T90/FALL80T20/CCJ/PAREA/NAREA/AREA/ABSAREA/\nCYCLES/REDGES/FEDGES/EDGES/PPULSES/NPULSES/PACArea/NACArea/ACArea/ABSACArea。\n无有效读数（如无信号测频率）会在超时后返回 device_error。",
+      "inputSchema": {
+        "properties": {
+          "item": {
+            "title": "Item",
+            "type": "string"
+          },
+          "ch": {
+            "default": 4,
+            "title": "Ch",
+            "type": "integer"
+          },
+          "resource": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Resource"
+          }
+        },
+        "required": [
+          "item"
+        ],
+        "title": "sds_measureArguments",
+        "type": "object"
+      },
+      "outputSchema": {
+        "properties": {
+          "result": {
+            "title": "Result",
+            "type": "string"
+          }
+        },
+        "required": [
+          "result"
+        ],
+        "title": "sds_measureOutput",
+        "type": "object"
+      }
+    },
+    {
+      "name": "sds_measure_phase",
+      "description": "SDS 双通道相位差（度）= B 相对 A 的相位（A/B 第一个上升沿中值点间）。\n用后自动关闭占用槽并恢复测量模式。用前请确认两通道完整周期在屏内\n（否则无有效值返回 device_error）。2026-09-08 实测：A=C2/B=C1 得 94.664°，\n交换后 265.218°（互补，符号约定验证通过）。",
+      "inputSchema": {
+        "properties": {
+          "src_a": {
+            "default": "C2",
+            "title": "Src A",
+            "type": "string"
+          },
+          "src_b": {
+            "default": "C1",
+            "title": "Src B",
+            "type": "string"
+          },
+          "resource": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Resource"
+          }
+        },
+        "title": "sds_measure_phaseArguments",
+        "type": "object"
+      },
+      "outputSchema": {
+        "properties": {
+          "result": {
+            "title": "Result",
+            "type": "string"
+          }
+        },
+        "required": [
+          "result"
+        ],
+        "title": "sds_measure_phaseOutput",
+        "type": "object"
+      }
+    },
+    {
+      "name": "sds_screenshot",
+      "description": "SDS 截屏并保存 PNG，返回文件路径——**该 PNG 可直接用 Read 工具查看**（AI\n视觉判断波形形态/削顶/居中/菜单状态/光标/测量栏）。2026-09-09 修复\nBMP alpha=0 致全透明问题（存前 convert('RGB')）。\n\n用途：设备测量值超屏时被钳制在屏界不可信，截图是\"有无波形/是否削顶\"的\n物理真相；也可核对面板菜单/光标/测量栏等 SCPI 不便读取的信息。\n无视觉能力时用库的 analyze_screen() 做像素分析兜底。",
+      "inputSchema": {
+        "properties": {
+          "resource": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Resource"
+          }
+        },
+        "title": "sds_screenshotArguments",
+        "type": "object"
+      },
+      "outputSchema": {
+        "properties": {
+          "result": {
+            "title": "Result",
+            "type": "string"
+          }
+        },
+        "required": [
+          "result"
+        ],
+        "title": "sds_screenshotOutput",
+        "type": "object"
+      }
+    },
+    {
+      "name": "sds_shutdown",
+      "description": "SDS 远程关机。⚠ 破坏性：设备离线需面板手动开机。必须 confirm=True。",
+      "inputSchema": {
+        "properties": {
+          "confirm": {
+            "title": "Confirm",
+            "type": "boolean"
+          },
+          "resource": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Resource"
+          }
+        },
+        "required": [
+          "confirm"
+        ],
+        "title": "sds_shutdownArguments",
+        "type": "object"
+      },
+      "outputSchema": {
+        "properties": {
+          "result": {
+            "title": "Result",
+            "type": "string"
+          }
+        },
+        "required": [
+          "result"
+        ],
+        "title": "sds_shutdownOutput",
+        "type": "object"
+      }
+    },
+    {
+      "name": "sds_status",
+      "description": "SDS 示波器只读快照：IDN/采集/时基/触发/各通道档位耦合。",
+      "inputSchema": {
+        "properties": {
+          "resource": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Resource"
+          }
+        },
+        "title": "sds_statusArguments",
+        "type": "object"
+      },
+      "outputSchema": {
+        "properties": {
+          "result": {
+            "title": "Result",
+            "type": "string"
+          }
+        },
+        "required": [
+          "result"
+        ],
+        "title": "sds_statusOutput",
+        "type": "object"
+      }
+    },
+    {
+      "name": "usb_reset",
+      "description": "⚠ 故障兜底：重启某台仪器所占用的 **USB PnP 设备节点**（USB-TMC 卡死时用）。\n\n用在哪：`*IDN?` 超时 / `VI_ERROR_TMO` / `VI_ERROR_SYSTEM_ERROR`，且**先重连一次仍不恢复**时。\n效果：USB 重新枚举——**仪器固件不重启、通道设定/输出/保护全部保留**（DG832 实测 2.4s 恢复）；\n比\"拔插 USB\"省事，**不要**直接给仪器断电（那是最后手段）。\n\n参数：kind（解析层设备类 sds/sdg/dmm/dho/mho/dg/psu，地址走解析层）或 resource（USB 资源串）\n二选一；confirm=True 必填（该仪器所有会话会中断 2~3 秒）；verify_idn=True 复位后轮询\n*IDN? 确认设备回来。仅支持 USB 资源——LAN 卡死请先重连/换协议（inst0 ↔ raw socket）。\n\n⚠ 权限：改设备节点必须管理员权限，**MCP 进程自身无法提权（不会弹 UAC）**。\n本进程已是管理员 → 直接可用；否则一律拒绝并给出出路（`escalate` 参数保留仅为\n兼容旧调用，MCP 内无提权能力）——真提权走 CLI（会弹 UAC）：\n`python common/usb_reset.py --kind <kind> --allow-reset --escalate --verify-idn`。",
+      "inputSchema": {
+        "properties": {
+          "kind": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Kind"
+          },
+          "resource": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Resource"
+          },
+          "confirm": {
+            "default": false,
+            "title": "Confirm",
+            "type": "boolean"
+          },
+          "escalate": {
+            "default": false,
+            "title": "Escalate",
+            "type": "boolean"
+          },
+          "verify_idn": {
+            "default": true,
+            "title": "Verify Idn",
+            "type": "boolean"
+          },
+          "timeout_s": {
+            "default": 20,
+            "title": "Timeout S",
+            "type": "integer"
+          }
+        },
+        "title": "usb_resetArguments",
+        "type": "object"
+      },
+      "outputSchema": {
+        "properties": {
+          "result": {
+            "title": "Result",
+            "type": "string"
+          }
+        },
+        "required": [
+          "result"
+        ],
+        "title": "usb_resetOutput",
+        "type": "object"
+      }
+    }
+  ]
+}

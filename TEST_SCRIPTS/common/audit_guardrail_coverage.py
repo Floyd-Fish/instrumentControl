@@ -191,7 +191,7 @@ def main() -> int:
         print(f"  {name:38s} {len(vals):3d} 项 | 手册查不到: {missing or '无'}", flush=True)
 
     # ---------------- §D 双向比对 ----------------
-    print("\n=== §D 白名单↔手册 双向比对（手册有我们缺 = 会误拦）===", flush=True)
+    print("\n=== §D 白名单<->手册 双向比对（手册有我们缺 = 会误拦）===", flush=True)
     pairs = [
         ("dho 测量项", ":MEASure:ITEM", "dho",
          set(FAMILIES["DHO"].measure_items) | set(FAMILIES["DHO"].measure_items_dual)),

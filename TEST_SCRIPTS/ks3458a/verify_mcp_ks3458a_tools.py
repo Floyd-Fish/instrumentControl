@@ -17,6 +17,7 @@
 from __future__ import annotations
 
 import json
+import os
 import re
 import subprocess
 import sys
@@ -27,6 +28,10 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 SERVER = ROOT / "mcp_instruments" / "server.py"
 PY_EXE = sys.executable
+
+# 断言对象是 `ks3458a_*` 这套 legacy 具名工具。server.py 的默认档已改为 compact，
+# 不钉住就会一个都找不到。
+SERVER_ENV = {**os.environ, "INSTRUMENT_MCP_PROFILE": "legacy"}
 
 
 # 工具名 → 期望的入参名集合（本文件是"设计"的可执行副本：改了工具必须同步改这里）
@@ -68,7 +73,8 @@ def main() -> int:
     # never depends on the machine's console code page.
     proc = subprocess.Popen([PY_EXE, str(SERVER)], stdin=subprocess.PIPE,
                             stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-                            text=True, encoding="utf-8", bufsize=1, cwd=str(ROOT))
+                            text=True, encoding="utf-8", bufsize=1, cwd=str(ROOT),
+                            env=SERVER_ENV)
 
     def send(obj: dict) -> None:
         proc.stdin.write(json.dumps(obj) + "\n")

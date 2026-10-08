@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
 import sys
 from pathlib import Path
 
@@ -32,6 +33,10 @@ sys.path.insert(0, str(ROOT / "dh1766_control" / "src"))
 
 RESOURCE = "GPIB0::9::INSTR"          # 或 "sicl:gpib0,9" / "visa://<host>/GPIB0::9::INSTR"
 SERVER = ROOT / "mcp_instruments" / "server.py"
+
+# 示例的 MCP 分支按名字调 legacy 具名工具（ks3458a_*）。server.py 的默认档已改为
+# compact，不显式指定就会 tools/call 失败。
+SERVER_ENV = {**os.environ, "INSTRUMENT_MCP_PROFILE": "legacy"}
 
 for s in (sys.stdout, sys.stderr):
     try:
@@ -109,7 +114,7 @@ async def via_mcp() -> None:
 
     print("== ② 走 MCP（stdio）==")
     params = StdioServerParameters(command=sys.executable, args=[str(SERVER)],
-                                   cwd=str(ROOT), env=None)
+                                   cwd=str(ROOT), env=SERVER_ENV)
     async with stdio_client(params) as (read, write):
         async with ClientSession(read, write) as session:
             await session.initialize()

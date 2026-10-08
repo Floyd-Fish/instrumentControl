@@ -72,7 +72,20 @@ for _req_type in (
 ):
     mcp._mcp_server.request_handlers.pop(_req_type, None)
 
-_DEVICE_LOCK = threading.Lock()
+# ── 护栏本体自 2026-09-23 起归入 instrument_runtime（方案 C 阶段 2）────────────
+# 目的：让「黑名单 / 审计 / 锁 / 回读验证」**不依赖本 MCP wrapper**——compact
+# profile、CLI、代码运行时将来都要放行仪器操作，各自重写一遍判据迟早出现
+# "某个入口忘了拦"。设计见 docs/gpt_qa/2026-09-23-instrument-gateway-arch.md §3。
+#
+# 下面保留**原私有名作为别名**，因此既有调用点一行未改，且
+# TEST_SCRIPTS/common/audit_guardrail_coverage.py（直接引用 S._is_forbidden /
+# S._is_query_only）继续可用——它对本层的全域穷举正好是迁移的等价性证据。
+from instrument_runtime import audit as _audit_mod                    # noqa: E402
+from instrument_runtime import policy as _policy                      # noqa: E402
+from instrument_runtime import verify as _verify_mod                  # noqa: E402
+from instrument_runtime.broker import DEVICE_LOCK as _DEVICE_LOCK     # noqa: E402
+from instrument_runtime.broker import decide_scpi as _decide_scpi     # noqa: E402
+
 _PREWARM_DONE = threading.Event()  # VISA/设备库冷启动完成前置位（看门狗放宽依据）
 
 
@@ -91,6 +104,52 @@ def _env_float(name: str, default: float) -> float:
 # 超时) ≈ 90s+），否则会把正常慢操作误判成挂起。
 _CALL_BUDGET_S = _env_float("INSTRUMENT_CALL_BUDGET_S", 150.0)
 _LOCK_WAIT_S = _env_float("INSTRUMENT_LOCK_WAIT_S", 30.0)
+
+
+# ── MCP profile（2026-09-23，方案 C 阶段 3/5）────────────────────────────────
+# compact ：**默认**。只暴露 5 个按需工具（instr_devices / instr_search /
+#           instr_describe / instr_call / instr_batch），把"有哪些能力"变成
+#           **按需数据**：仪器这一组的工具定义从 59,677 字符 ≈ 19.9k token 降到
+#           4,600 字符 ≈ 1.5k token（省约 18.4k token/请求，由
+#           verify_compact_profile.py 的 S4 现场测量）。
+# legacy  ：暴露全部 68 个工具（每个操作一个名字）。**只为兼容**保留——需要
+#           `sds_measure` 这类固定工具名的客户端/脚本才用。
+#
+# 为什么默认定成 compact：切换 profile 要改客户端配置**并重启**（MCP 工具表不热
+# 重载），每台机器都得做一遍；定成默认后哪里都不用配，legacy 反而成为少数情况下
+# 的例外。
+#
+# **两种 profile 都完整登记 registry**，且都走同一个执行器——因此 compact 下的
+# `instr_call(op, args)` 与 legacy 下的同名工具**共用一条执行路径**，
+# 不存在"换 profile 后超时/并发语义变了"的隐患。安全护栏也不经前端：
+# 黑名单在 policy/操作实现层，DG832 保护联锁在库里，绕过前端同样跳不过。
+#
+# 取值优先级：命令行 `--profile=<compact|legacy>` > 环境变量 INSTRUMENT_MCP_PROFILE
+# > 默认 **compact**。
+_DEFAULT_PROFILE = "compact"
+_PROFILES = ("legacy", "compact")
+
+
+def _resolve_profile(argv: list[str]) -> str:
+    """解析 profile；非法值回退**默认档**并告警（不因为写错一个环境变量就起不来）。"""
+    chosen = ""
+    for i, a in enumerate(argv):
+        if a.startswith("--profile="):
+            chosen = a.split("=", 1)[1]
+        elif a == "--profile" and i + 1 < len(argv):
+            chosen = argv[i + 1]
+    if not chosen:
+        chosen = os.environ.get("INSTRUMENT_MCP_PROFILE", "")
+    chosen = (chosen or _DEFAULT_PROFILE).strip().lower()
+    if chosen not in _PROFILES:
+        print(f"[instrumentControl] unknown profile {chosen!r}; falling back to "
+              f"{_DEFAULT_PROFILE} (expected one of {list(_PROFILES)})",
+              file=sys.stderr, flush=True)
+        return _DEFAULT_PROFILE
+    return chosen
+
+
+_PROFILE = _resolve_profile(sys.argv[1:])
 
 # 设备专用工具返回体里回填"本次实际用的地址"：模型名 → 解析层的 kind
 _MODEL_KIND = {"SDS": "sds", "SDG": "sdg", "DMM": "dmm", "DHO": "dho", "MHO": "mho",
@@ -165,21 +224,8 @@ from common.resolver import (  # noqa: E402
 )
 
 
-def _pair_readback(cmd: str | None, resp: str | None) -> list[dict] | None:
-    """多段回读的**字段配名**：':C1:SCALe?;:C1:OFFSet?' → [{cmd,value}, {cmd,value}]。
-
-    现场教训（docs/tool_optimization_20260915.md §P2-6）：`;` 串联的多条回读原先
-    只把响应原样拼成 "a;b" 返回——没有字段名，调用方要自己数字段、**写错顺序不报错**。
-    这里按查询段与返回段一一配对；段数不符时如实说明（不硬配）。
-    """
-    if not cmd or resp is None or ";" not in cmd:
-        return None
-    units = [u.strip() for u in cmd.split(";") if u.strip()]
-    vals = [v.strip() for v in resp.split(";")]
-    if len(units) != len(vals):
-        return [{"cmd": cmd, "value": resp,
-                 "note": f"段数不符（查询 {len(units)} 段 / 返回 {len(vals)} 段），未配对名"}]
-    return [{"cmd": u, "value": v} for u, v in zip(units, vals)]
+# 多段回读配名的实现已迁至 instrument_runtime/verify.py；此处只留别名。
+_pair_readback = _verify_mod.pair_readback
 
 
 def _ok(model, result, resource=None):
@@ -486,10 +532,171 @@ def device_tool(budget_s=None):
             return await _executor().run(functools.partial(fn, *args, **kwargs),
                                          budget_s, label=fn.__name__,
                                          args=args, kwargs=kwargs)
-        _preserve_signature(wrapper, fn)   # 保 50 个工具的入参 schema 不变
-        mcp.tool()(wrapper)
+        _preserve_signature(wrapper, fn)   # 保工具的入参 schema 不变
+        if _PROFILE == "legacy":
+            mcp.tool()(wrapper)
+        _register_runtime_operation(fn, budget_s, wrapper)
         return fn
     return deco
+
+
+def _register_runtime_operation(fn, budget_s, wrapper) -> None:
+    """把工具登记进 `instrument_runtime`（阶段 1 起；阶段 3 起与 profile 解耦）。
+
+    设计见 docs/gpt_qa/2026-09-23-instrument-gateway-arch.md。三条纪律：
+
+    * **schema / description 用 FastMCP 自己的 `Tool.from_function` 生成**，不在 runtime
+      里按签名手写一遍——那等于把 FastMCP 的 schema 规则复制一份，将来必然漂移。
+      调用的是 FastMCP 注册工具时用的同一个构造器，所以两种 profile 下 schema 一致。
+    * **legacy 下再与真实注册对象比对**：注册表里的 Tool 若与派生结果不符，说明我对
+      FastMCP 的用法有偏差（compact 会据此下发错误的参数表），直接抛错——宁可服务起不来。
+    * **未分类的工具直接报错**（safety_for_tool 抛 KeyError）。宁可服务起不来，也不要
+      一个没被风险分级、没有确认门的工具悄悄上线。
+
+    requires_confirm 取**函数签名实测值**，与 catalog 的 CONFIRM_TOOLS 复核；两处不一致
+    立即抛错（少一道确认门比多一道危险得多）。
+    """
+    from mcp.server.fastmcp.tools.base import Tool
+
+    from instrument_runtime import device_for_tool, register_operation, safety_for_tool
+
+    # description **不要自己传**：传了就等于换一套提取口径。实测（2026-09-23）
+    # 用 `inspect.getdoc(fn)` 会与 FastMCP 注册对象的 description 出现漂移
+    # （sds_meas_threshold 第一个报出来），而下面的比对会因此拒绝启动。
+    # 让它自己从 wrapper 的 __doc__ 提取，才与 `mcp.tool()` 的注册路径逐字一致。
+    derived = Tool.from_function(fn=wrapper, name=fn.__name__)
+    if _PROFILE == "legacy":
+        registered = mcp._tool_manager.get_tool(fn.__name__)
+        if registered is None:
+            raise RuntimeError(
+                f"tool {fn.__name__!r} was not found in the FastMCP registry right after "
+                f"registration; instrument_runtime cannot verify it"
+            )
+        if (registered.parameters or {}) != (derived.parameters or {}):
+            raise RuntimeError(
+                f"input schema drift for {fn.__name__!r}: the FastMCP-registered schema "
+                f"differs from Tool.from_function derivation; compact profile would serve a "
+                f"wrong parameter table. Refusing to start."
+            )
+        if (registered.description or "") != (derived.description or ""):
+            raise RuntimeError(
+                f"description drift for {fn.__name__!r}: registered vs derived differ; "
+                f"refusing to start."
+            )
+
+    requires_confirm = "confirm" in inspect.signature(fn).parameters
+    register_operation(
+        tool_name=fn.__name__,
+        description=derived.description or "",
+        schema=derived.parameters or {},
+        device=device_for_tool(fn.__name__),
+        safety=safety_for_tool(fn.__name__, requires_confirm=requires_confirm),
+        budget=budget_s,
+        fn=fn,
+    )
+
+
+async def _run_operation_by_name(tool_name: str, args: dict) -> str:
+    """compact profile 的执行入口：按工具名跑 registry 里登记的操作。
+
+    **刻意与 `device_tool` 的 wrapper 逐句等价**（同一个 `_executor().run`、
+    同样把 `args=()` / `kwargs=args` 传给预算解析）——compact 下的 `instr_call`
+    因此与 legacy 下调用同名工具走**同一条执行路径**，不会出现"换 profile 后
+    超时/device_busy 语义变了"这类难查的差异。
+    """
+    from instrument_runtime import get_registry
+
+    op = get_registry().require(tool_name)
+    _fix_stdout_once()
+    return await _executor().run(functools.partial(op.fn, **args), op.budget,
+                                 label=op.tool_name, args=(), kwargs=args)
+
+
+def _invoke_operation(tool_name: str, args: dict) -> str:
+    """**已处于 executor worker 内**时的叶子调用入口（batch 专用）。
+
+    刻意**不**走 `_executor().run`（那就是 executor 自调用），也**不**走公开的
+    `instr_call`——那两者都会再排一次队。batch 的每个叶子经这里直接调用 canonical
+    operation 的实现，于是各自的 `_call` 照常获取 `_DEVICE_LOCK`（batch 自己不持锁，
+    所以没有重入死锁），执行语义与 legacy / instr_call 完全一致。
+    """
+    from instrument_runtime import get_registry
+
+    op = get_registry().require(tool_name)
+    return op.fn(**args)
+
+
+async def _run_batch(plan_dict: dict) -> str:
+    """compact 的 `instr_batch`：preflight → **一个** executor job 跑完整批 → run 摘要。
+
+    为什么整批只提交一个 job（见 instrument_runtime/batch.py 顶部第 1 条）：
+    BUSY 在整批期间保持，进程内其它设备调用会拿到 device_busy 而**不会插进序列中间**
+    —— 扫频需要的正是这个。若每个叶子各提交一个 job，BUSY 会在步与步之间释放，
+    别的调用就能插进来改频率，扫频结果被污染。
+    """
+    from instrument_runtime import batch as batch_mod
+    from instrument_runtime import get_registry
+    from instrument_runtime.plan import validate_plan
+
+    reg = get_registry()
+    vp, issues = validate_plan(
+        plan_dict,
+        op_exists=lambda oid: (reg.by_id(oid) or reg.get(oid)) is not None,
+    )
+    if issues or vp is None:
+        return json.dumps({
+            "ok": False, "error_type": "plan_validation",
+            "error": "plan 未通过 preflight（结构/操作存在性/作用域/规模），"
+                     "**未执行任何仪器操作**",
+            "issues": [{"path": i.path, "code": i.code, "message": i.message} for i in issues],
+        }, ensure_ascii=False, default=str)
+
+    deadline = vp.execution_deadline_s
+    budget_s = (float(deadline) + 120.0) if deadline else max(_CALL_BUDGET_S, 300.0)
+
+    def job() -> str:
+        summary = batch_mod.run_plan(
+            vp, invoke=_invoke_operation, registry=reg,
+            artifact_dir=Path(ROOT) / "TEST_DATA" / "common" / "batch",
+        )
+        return json.dumps(summary, ensure_ascii=False, default=str)
+
+    _fix_stdout_once()
+    return await _executor().run(job, budget_s, label="instr_batch", args=(), kwargs={})
+
+
+def _known_devices_quick() -> str:
+    """compact `instr_devices` 的**快速路径**：只报已配置 + 上次成功缓存的地址，**不扫描**。
+
+    为什么要它（2026-09-23 实测）：全量发现要扫本机各网段——本机两个 /16 合计
+    131,830 台主机，实测 **355.9s**。它既超过 MCP 客户端默认的 60s 工具超时
+    （客户端直接报 -32001），又全程占着执行器 BUSY（期间**所有**其它仪器调用都返回
+    device_busy）。而多数时候调用方只想知道"我现在能用哪些仪器"——这个答案就在
+    配置与缓存里，取它是瞬时的。
+    """
+    from common import resolver
+
+    known = resolver.known_resources()
+    devices = [{"kind": k, "resource": v} for k, v in sorted(known.items())]
+    excluded: list[str] = []
+    try:
+        from common import discovery
+        excluded = discovery.excluded_cidrs()
+    except Exception:                                            # noqa: BLE001
+        pass
+    payload = {
+        "ok": True,
+        "mode": "known",
+        "count": len(devices),
+        "devices": devices,
+        "source": "devices.json 配置 + last_good_resources.json 缓存",
+        "scanned": False,
+        "hint": "这是**已知地址**，未做实时扫描。要看当前真正在线、且能发现新接入/换地址"
+                "的仪器，用 instr_devices(full=true)（本机实测 355.9s，会占用设备执行器）。",
+    }
+    if excluded:
+        payload["excluded_cidrs"] = excluded
+    return json.dumps(payload, ensure_ascii=False, default=str)
 
 
 def _preserve_signature(wrapper, fn) -> None:
@@ -973,121 +1180,24 @@ def usb_reset(kind: str | None = None, resource: str | None = None,
 # 设计取舍：不做多设备接口统一——各库专用工具承载人工筛选的语义与安全门；
 # 通用工具只提供"对照手册直发命令"的护栏通道，设备用出价值后再补专用库。
 
-# 复位/存储覆写类黑名单（AGENTS.md 安全红线）：confirm=True 也不放行——
-# 需显式授权的复位场景走测试脚本（如 dh1766 --allow-rst），不经 MCP。
-_FORBIDDEN_COMMON_RE = re.compile(r"\*(RST|SAV|RCL)")  # *RST / *SAV n / *RCL n
-
-# 子系统助记符表：(短形式, 长形式)。SCPI 允许短形式与长形式之间的**任意前缀**
-# （SCPI-99 §6.2.2 命令助记符），只比对两种写法会漏掉中间缩写
-# （实测漏网：`:SYST:RESE`、`:SYST:PRESE`、`:SYST:COMMU:RLST RWL`）。
-_RESET_NODES = (("RES", "RESET"), ("FACT", "FACTORY"), ("PRES", "PRESET"))
-_LOCK_NODES = (("REM", "REMOTE"), ("RWL", "RWL"), ("LOCK", "LOCKED"))
-_COMM_NODES = (("COMM", "COMMUNICATE"),)
-_RLST_NODES = (("RLS", "RLSTATE"),)
-
-
-def _mnemonic(token: str, short: str, long: str) -> bool:
-    """SCPI 助记符匹配（宽松，黑名单用「宁可误拦」的偏置）。
-
-    接受三类写法：① short..long 之间的任意前缀（SCPI-99 §6.2.2）；② 长形式本身；
-    ③ 短形式开头后粘连参数（如 `SYST:REMON` = `SYST:REM ON`，历史实现按正则前缀
-    搜索能拦下，行为必须保持）。
-    """
-    t, lo = token.upper(), long.upper()
-    return len(t) >= len(short) and (lo.startswith(t) or t.startswith(short))
+# 黑名单与查询判据的**实现已迁至** instrument_runtime/policy.py（含其全部注释与
+# 现场教训）。此处只留别名，既有调用点与离线审计脚本无需改动。
+_FORBIDDEN_COMMON_RE = _policy.FORBIDDEN_COMMON_RE
+_RESET_NODES = _policy.RESET_NODES
+_LOCK_NODES = _policy.LOCK_NODES
+_COMM_NODES = _policy.COMM_NODES
+_RLST_NODES = _policy.RLST_NODES
+_QUERY_UNIT_RE = _policy.QUERY_UNIT_RE
+_mnemonic = _policy.mnemonic
+_any_node = _policy.any_node
+_classify_forbidden = _policy.classify_forbidden
+_is_query_only = _policy.is_query_only
+_is_forbidden = _policy.is_forbidden
 
 
-def _any_node(token: str, pairs: tuple[tuple[str, str], ...]) -> bool:
-    return any(_mnemonic(token, s, l) for s, l in pairs)
-
-
-def _classify_forbidden(cmd: str) -> str | None:
-    """逐条（`;` 分段）判定命令是否命中黑名单；命中返回类别，否则 None。
-
-    必须在**分段**上判定：`*RST;*IDN?` 这类多命令消息单看整串会漏判，
-    只看首段又会漏掉后续段（历史缺陷：instr_query 只查 `?` 不看黑名单，
-    `"*IDN?;:SYST:RESE"` 可直接复位仪器）。
-    """
-    for part in cmd.split(";"):
-        # 先切出命令头（空格前）再归一——否则 "SYST:REM ON" 归一成 "SYST:REMON"，
-        # 参数会粘连到助记符上导致漏判。
-        stripped = part.strip()
-        if not stripped:
-            continue
-        head = re.split(r"\s+", stripped)[0].upper().lstrip(":")
-        if not head:
-            continue
-        # 公共命令族（*RST/*SAV/*RCL）在**整段**上搜，不限定在命令头——数据段里混进
-        # 这几个词没有正当用途，宁可误拦（防御"参数位置偷发复位"）。
-        if _FORBIDDEN_COMMON_RE.search(stripped):
-            return "reset"
-        segs = [s for s in head.split(":") if s]
-        if not segs or not _mnemonic(segs[0], "SYST", "SYSTEM"):
-            continue
-        if len(segs) >= 2 and _any_node(segs[1], _RESET_NODES):
-            return "reset"
-        if len(segs) >= 2 and _any_node(segs[1], _LOCK_NODES):
-            return "lock"
-        if len(segs) >= 3 and _any_node(segs[1], _COMM_NODES) and _any_node(segs[2], _RLST_NODES):
-            return "lock"
-    return None
-
-
-# 单条命令单元的形状：命令头以 `?` 结尾，问号后**允许**带参数。
-#
-# `?` 后带参数是标准 SCPI 写法（`:MEASure:ITEM? VPP,CHANnel2`、`SAMPle:COUNt? MAX`），
-# 故不能按"整段以 ? 结尾"判（2026-09-15 曾因此把带参数查询全拒了，用户报障后修正）。
-_QUERY_UNIT_RE = re.compile(r"^[:*]?[A-Za-z][A-Za-z0-9:<>{}_.]*\?(?:\s[\s\S]*)?$")
-
-
-def _is_query_only(cmd: str) -> bool:
-    """整条消息是否**纯查询**：每个 `;` 分段都必须是查询单元（问号后允许带参数）。
-
-    为什么按"分段"而不是"整条"判：SCPI 里 `;` 分隔的是**同一条消息内的多个命令单元**，
-    设备会逐个执行——实测 DG832 `:SOUR1:PHAS?;:SOUR1:PHAS 123` 的写单元真的生效
-    （Keysight 手册明文：`TRIG:SOUR EXT;COUNT 10` 等价于两条命令）。只查首尾会让写命令
-    从查询口溜进去；只允许单条单元又会把**多段回读**（`:CHANnel4:DISPlay?;:CHANnel4:SCALe?`）
-    一起拒掉——那是合法且常用的用法（2026-09-15 曾这样过度收紧，用户报障后修回）。
-
-    逐段判用同一条正则（一条命令单元 = `_QUERY_UNIT_RE`），不解析助记符：
-    写命令（头里无 `?`）、混合消息（`:OUTP1 ON;:OUTP1?`）、复位/锁定类一律拦。
-    """
-    units = [u for u in (p.strip() for p in (cmd or "").split(";"))]
-    if not units or any(not u for u in units):
-        return False
-    return all(_QUERY_UNIT_RE.match(u) for u in units)
-
-
-def _is_forbidden(cmd: str) -> bool:
-    """黑名单判定（复位/存储覆写一律拦；远程锁定类**只拦写**）。
-
-    语义：复位/存储覆写类一律 forbidden；远程锁定类只在**非纯查询**时拦——
-    `SYST:REM?`、`:SYSTem:LOCKed?` 这类纯查询不改变锁定状态，保留用于状态诊断。
-    判定按 `;` 分段做，且接受 SCPI 长短形式之间的任意前缀缩写。
-    """
-    kind = _classify_forbidden(cmd)
-    if kind == "reset":
-        return True
-    if kind == "lock":
-        return not _is_query_only(cmd)
-    return False
-
-
-_ERR_CLEAN_RE = re.compile(r"^\+?0\s*,")
-
-
-def _drain_errors(c) -> list[str]:
-    """排空 SYST:ERR? 队列（铁律2），上限 20 条防死循环。"""
-    errs: list[str] = []
-    for _ in range(20):
-        try:
-            r = c.query("SYST:ERR?").strip()
-        except Exception as e:
-            return errs + [f"(SYST:ERR? 查询失败: {type(e).__name__})"]
-        if _ERR_CLEAN_RE.match(r) or "no error" in r.lower():
-            return errs
-        errs.append(r)
-    return errs + ["(错误队列超过 20 条，停止排空)"]
+# 错误队列排空的实现已迁至 instrument_runtime/verify.py；此处只留别名。
+_ERR_CLEAN_RE = _verify_mod.ERR_CLEAN_RE
+_drain_errors = _verify_mod.drain_errors
 
 
 def _visa(resource: str, timeout_ms: int = 5000):
@@ -1114,16 +1224,10 @@ def _guarded_call(resource: str, timeout_ms: int, fn) -> str:
                  resource=resource)
 
 
-def _audit_scpi(tool: str, resource: str, cmd: str, **extra) -> str:
-    """通用 SCPI 写留痕：TEST_DATA/common/mcp_scpi_audit_YYYYMMDD.jsonl（含拒绝记录）。"""
-    d = Path(ROOT) / "TEST_DATA" / "common"
-    d.mkdir(parents=True, exist_ok=True)
-    p = d / f"mcp_scpi_audit_{datetime.now():%Y%m%d}.jsonl"
-    entry = {"ts": datetime.now().isoformat(timespec="seconds"),
-             "tool": tool, "resource": resource, "cmd": cmd, **extra}
-    with open(p, "a", encoding="utf-8") as f:
-        f.write(json.dumps(entry, ensure_ascii=False, default=str) + "\n")
-    return str(p)
+# 审计落盘的实现已迁至 instrument_runtime/audit.py；此处只留别名。
+# 路径一致性：audit 模块按**包位置**推导仓库根（instrument_runtime/ 的上一级），
+# 与本文件的 ROOT 指向同一目录，故审计文件落点不变。
+_audit_scpi = _audit_mod.audit_scpi
 
 
 @device_tool(budget_s=_generic_budget)
@@ -2556,10 +2660,50 @@ if __name__ == "__main__":
         print("[instrumentControl] startup self-check failed: "
               f"{type(e).__name__}: {ascii(e)}",
               file=sys.stderr, flush=True)
+    # runtime registry 覆盖自检（2026-09-23 加，方案 C 阶段 1）：registry 必须与
+    # MCP 工具表**一一对应**——少一个（未分类）或多一个（目录残留）都要在启动时报出来。
+    # 同口径的离线断言在 TEST_SCRIPTS/common/verify_registry_parity.py。
+    # compact profile：注册 4 个按需发现工具（阶段 3）。必须在 legacy 的 68 个工具
+    # 全部登记进 registry **之后**——compact 工具本身通过 registry 查找与执行操作。
+    if _PROFILE == "compact":
+        try:
+            from compact_tools import register as register_compact_tools
+            from instrument_runtime import get_registry as _get_registry
+
+            register_compact_tools(mcp, registry=_get_registry(),
+                                   run_fn=_run_operation_by_name,
+                                   run_batch_fn=_run_batch,
+                                   devices_quick_fn=_known_devices_quick)
+        except Exception as e:
+            print("[instrumentControl] compact profile registration failed: "
+                  f"{type(e).__name__}: {ascii(e)}",
+                  file=sys.stderr, flush=True)
+            raise
+    try:
+        from instrument_runtime import get_registry, unclassified
+
+        _reg = get_registry()
+        _stale, _unclassified = unclassified(_reg.tool_names())
+        print(f"[instrumentControl] startup self-check | profile={_PROFILE}, "
+              f"runtime registry operations={len(_reg)}, "
+              f"unclassified {len(_unclassified)}, "
+              f"stale catalog entries {len(_stale)}"
+              + (f" unclassified={_unclassified}" if _unclassified else "")
+              + (f" stale={_stale}" if _stale else ""),
+              file=sys.stderr, flush=True)
+    except Exception as e:
+        print("[instrumentControl] runtime registry self-check skipped: "
+              f"{type(e).__name__}: {ascii(e)}",
+              file=sys.stderr, flush=True)
     # 工具元信息自检（2026-09-16 加）：**每个工具的 description 来自其函数 docstring**，
     # 漏写 docstring 的工具会在客户端里显示成"无描述"（历史上退役的 DG832 独立服务器
     # 13 个工具里就有 12 个没描述，被误当成"工具集缺文档"）。这里启动时报出总数与缺口。
     # 同口径的协议级断言在 TEST_SCRIPTS/common/verify_mcp_tools_meta.py（离线可跑）。
+    #
+    # ⚠ **本行必须保持在所有 `[instrumentControl]` 启动行之后（即最后一行）**：
+    # verify_mcp_tools_meta.py 取 `startup[-1]` 再用 `description\s+(\d+)` 判缺口，
+    # 在它之后再追加自检行会让该断言拿到 n/a 而 FAIL（2026-09-23 加 registry 自检时
+    # 实测踩过）。新增启动行请插在本段**之前**。
     try:
         _tools = mcp._tool_manager.list_tools()
         _no_desc = [t.name for t in _tools if not (t.description or "").strip()]

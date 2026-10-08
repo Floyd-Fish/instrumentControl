@@ -4,18 +4,39 @@
 keysight_3458a / dho_control / mho_control / dg832_control / dh1766_control
 + common 统一发现层）。
 
+## 暴露方式：两种 profile
+
+**能力共 68 个操作**，但**模型看到几个工具取决于 profile**（`--profile=<legacy|compact>`
+或环境变量 `INSTRUMENT_MCP_PROFILE`，默认 `compact`）：
+
+| profile | 工具数 | 工具定义体量 | 说明 |
+|---|---|---|---|
+| `compact` | 5 | ≈1.5k token | **默认**；`instr_devices` / `instr_search` / `instr_describe` / `instr_call` / `instr_batch` |
+| `legacy` | 68 | ≈19.9k token | 每个操作一个工具（`sds_measure`、`dg_set_wave` …），下文工具清单即这一套 |
+
+**两种 profile 的能力完全相同、执行路径相同**（都经 registry → policy → 同一个执行器），
+差别只在"多少工具定义常驻上下文"。compact 下本文的 legacy 名字是**操作**，
+规范 id 把首个下划线换成点（`sds_measure` → `sds.measure`），经 `instr_call`
+或 `instr_batch` 调用。用法与映射见 `SKILL.md` 的「零、如果你在 compact profile 下」。
+
+**切换后必须重启客户端**：MCP 工具表不会热重载。切换到紧凑档的完整说明（含回滚）
+见仓库根 `AGENTS.md` 的「七、runtime 分层与 MCP profile」。
+
 ## 启动
 
 ```powershell
-python D:\MyProjects\AI\instrumentControl\mcp_instruments\server.py
+python <repo>\mcp_instruments\server.py
+python <repo>\mcp_instruments\server.py --profile=compact    # 只暴露 5 个按需工具
 ```
 
 MCP 注册（opencode/cursor 等）：command 用 python 全路径，args 为本文件路径。
 
 ## 工具清单
 
-共 **65 个** = 61 个设备专用 + 3 个通用护栏（`instr_discover` / `instr_query` / `instr_write`）
-+ 1 个**故障维护兜底**（`usb_reset`：USB-TMC 卡死时重启该仪器的 USB PnP 设备节点）。
+下表是 **legacy profile** 的暴露面：共 **68 个** = 64 个设备专用 + 3 个通用护栏
+（`instr_discover` / `instr_query` / `instr_write`）+ 1 个**故障维护兜底**
+（`usb_reset`：USB-TMC 卡死时重启该仪器的 USB PnP 设备节点）。
+compact profile 下这些名字是**操作 id**（`sds.measure` 等），经 `instr_call` 调用。
 
 | 工具 | 说明 | 安全 |
 |---|---|---|

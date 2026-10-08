@@ -18,6 +18,7 @@ Usage:
 from __future__ import annotations
 
 import json
+import os
 import re
 import subprocess
 import sys
@@ -27,6 +28,10 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 SERVER = ROOT / "mcp_instruments" / "server.py"
 PY_EXE = sys.executable
+
+# 断言对象是 legacy 具名工具面（名字、annotations、description）。server.py 的默认档
+# 已改为 compact，不钉住就会对着 5 个 compact 工具做断言。
+SERVER_ENV = {**os.environ, "INSTRUMENT_MCP_PROFILE": "legacy"}
 
 fails: list[str] = []
 
@@ -58,7 +63,7 @@ def main() -> int:
     # are decoded separately below; one shared `encoding=` cannot serve both.
     proc = subprocess.Popen([PY_EXE, str(SERVER)], stdin=subprocess.PIPE,
                             stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-                            bufsize=0, cwd=str(ROOT))
+                            bufsize=0, cwd=str(ROOT), env=SERVER_ENV)
 
     def send(obj: dict) -> None:
         proc.stdin.write((json.dumps(obj) + "\n").encode("utf-8"))

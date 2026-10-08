@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import subprocess
 import sys
 import threading
@@ -23,6 +24,10 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT))
+
+# 本脚本调的是 legacy 具名工具（按名字直接 tools/call）。server.py 的默认档已改为
+# compact，不钉住就会 "Unknown tool"。
+SERVER_ENV = {**os.environ, "INSTRUMENT_MCP_PROFILE": "legacy"}
 
 AP = argparse.ArgumentParser()
 AP.add_argument("--kind", default="mho", choices=["mho", "dg"])
@@ -44,7 +49,7 @@ class Server:
         self.p = subprocess.Popen(
             [sys.executable, str(ROOT / "mcp_instruments" / "server.py")],
             stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-            text=True, encoding="utf-8", bufsize=1, cwd=str(ROOT))
+            text=True, encoding="utf-8", bufsize=1, cwd=str(ROOT), env=SERVER_ENV)
         self._send({"jsonrpc": "2.0", "id": 1, "method": "initialize",
                     "params": {"protocolVersion": "2024-11-05", "capabilities": {},
                                "clientInfo": {"name": "sess-lock-live", "version": "1"}}})
