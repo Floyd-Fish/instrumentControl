@@ -510,3 +510,23 @@
     parity / compact_profile / broker_offline / tools_meta 全 PASS。
   - 待办：远程机（TS-ASTATION）的 keysight_3458a 子集**尚未同步**这套收尾方法——
     下次远程用 3458A 前先同步（或直接在远程跑现库+手动 TARM AUTO）。
+
+- 2026-10-09（远程机 TS-ASTATION 完整部署：代码/依赖/opencode/DSH/skill/服务/计划任务）：
+  - **连接通道**：WinRM 优先 **LAN 直连 `192.168.31.35`**（仪器网段，实测可达）；
+    Tailscale `100.106.66.116` 本轮失联（coord server 连不上，NoState）——LAN 是兜底。
+    已记入 skill `winrm-remote-workstation`（连接优先级）与 `DEVICE_FACTS.local.md`（拓扑）。
+  - **代码同步**：`git archive HEAD` 打包（1.9 MB）→ Copy-Item -ToSession → 远程
+    `C:\MySpace\AI\instrumentControl`（旧 common+keysight_3458a 子集已备份为
+    `instrumentControl_backup_20261009`）。远程无 git——后续更新同样走打包重传。
+  - **依赖**：pip 装 `mcp` 拉到 **2.3.0**（FastMCP 已改名 MCPServer，不兼容）→
+    改锁 `mcp>=1.27,<2` = **1.30.0** 通过。Python 3.14.6（本机 3.11——代码跨版本兼容验证过）。
+  - **客户端**：远程 `~/.config/opencode/opencode.json` 新建（instruments →
+    `http://127.0.0.1:8765/mcp` remote）；DSH `~/.dsh/cordis.patch.yml` 追加同款条目
+    （两个 profile 原先都没配 instruments）；skill `instrument-mcp` 旧副本（09-23）→
+    仓库最新（65 KB）。**远程自起服务，不连本机**。
+  - **服务**：run_remote.ps1 start 首败——`CREATE_BREAKAWAY_FROM_JOB` 在 WinRM 会话
+    被拒（WinError 5，Job 无 PROCESS_BREAKAWAY 权限）→ 启动器改**条件性降级**
+    （BREAKAWAY 被拒则用 DETACHED 两标志，脱离 console/句柄已足够；本机回归 6/6）。
+    重跑成功：pid=6480、登录计划任务已注册。
+  - **真机验证**：走远程单例 `instr_call ks3458a.status` → **HP3458A 在线**，
+    `tarm=1(AUTO)`（10-08 面板修复后状态保持）、10V 档、NPLC=10。
