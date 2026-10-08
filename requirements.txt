@@ -1,8 +1,14 @@
-# 通用依赖（所有设备共用）
-pyvisa>=1.13.0
+# instrumentControl 运行依赖（Python 3.11+ / 3.14 均验证过）
+#
+# ⚠ mcp 必须锁 1.x（>=1.27,<2）：2.0（2026-07-28 起 pip 默认拉 2.x）是破坏性重构——
+#   FastMCP 改名 MCPServer、传输配置移出构造（mcp.settings.host/port 赋值成 TypeError）、
+#   字段 camelCase→snake_case、同步 handler 改跑 worker 线程（与我们自建的单 worker
+#   执行器/VISA 串行化设计冲突）。升级 2.x 是独立课题（需重做 schema 比对守卫与
+#   执行器语义回归），见 docs/TEST_RECORDS.md 2026-10-09。
+#   实测可用版本：本机 1.27.0、远程机 1.30.0（均通过 71 工具全量验证）。
+mcp>=1.27,<2
 
-# Windows 平台说明：
-# - USB TMC 设备访问依赖厂商 VISA 运行时（NI-VISA 或 Keysight IO Libraries Suite），
-#   本机已安装 visa32.dll（C:\Windows\system32\visa32.dll）。
-# - 禁止使用 pyusb/libusb 直接访问仪器：Windows 上除非设备装了 WinUSB 驱动，
-#   否则 libusb 打开设备会报 NotImplementedError。仪器控制一律走 VISA。
+# 其余为设备库运行时依赖（common/keysight_3458a 等）
+pyvisa>=1.6
+numpy        # pyvisa/util.py 模块级引入（OPENBLAS_NUM_THREADS=1 已在 common/__init__.py 预置）
+psutil       # common/session_lock.py 进程存活判定
