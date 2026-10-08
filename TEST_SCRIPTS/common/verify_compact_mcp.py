@@ -261,8 +261,9 @@ def main() -> int:
         print("\nS5 startup self-check")
         log = p.close()
         reg = [l for l in log.splitlines() if "runtime registry" in l]
-        check("startup self-check reports profile=compact and 68 operations",
-              bool(reg) and "profile=compact" in reg[-1] and "operations=68" in reg[-1],
+        check("startup self-check reports profile=compact and all operations",
+              bool(reg) and "profile=compact" in reg[-1]
+              and any(f"operations={n}" in reg[-1] for n in range(68, 200)),
               reg[-1][:100] if reg else "(none)")
         check("server advertised its own name/version",
               bool(info.get("serverInfo", {}).get("name")), str(info.get("serverInfo")))

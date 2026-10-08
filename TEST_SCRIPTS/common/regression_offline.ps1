@@ -39,8 +39,17 @@ $suites = [ordered]@{
   'k3458a_offline'            = 'TEST_SCRIPTS/ks3458a/verify_3458a_offline.py'
   'k3458a_mcp_tools'          = 'TEST_SCRIPTS/ks3458a/verify_mcp_ks3458a_tools.py'
   'k3458a_worker_isolation'   = 'TEST_SCRIPTS/ks3458a/verify_worker_isolation.py'
+  'k3458a_front_panel'        = 'TEST_SCRIPTS/ks3458a/verify_front_panel_release_offline_20261008.py'
   'dg832_edge_cases'          = 'TEST_SCRIPTS/dg832/verify_dg832_edge_cases.py'
   'install_skills_check'      = 'scripts/install_skills.py --check'
+  # ---- 2026-10-08 批次（v2dev 合并 + 单例化 + 审计下沉）----
+  'registry_parity'           = 'TEST_SCRIPTS/common/verify_registry_parity.py'
+  'broker_offline'            = 'TEST_SCRIPTS/common/verify_broker_offline.py'
+  'compact_profile'           = 'TEST_SCRIPTS/common/verify_compact_profile.py'
+  'batch_offline'             = 'TEST_SCRIPTS/common/verify_batch_offline.py'
+  'compact_mcp_protocol'      = 'TEST_SCRIPTS/common/verify_compact_mcp.py'
+  'audit_sink'                = 'TEST_SCRIPTS/common/verify_audit_sink_20261008.py'
+  'spawn_detached'            = 'TEST_SCRIPTS/common/verify_spawn_detached_20261008.py'
 }
 
 "=== offline regression $stamp ===" | Out-File -Encoding utf8 $log

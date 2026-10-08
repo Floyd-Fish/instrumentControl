@@ -48,6 +48,10 @@ EXPECTED_TOOLS: dict[str, set[str]] = {
     "ks3458a_acv": {"range", "band_lo", "band_hi", "sync", "nplc", "resource"},
     "ks3458a_reset": {"confirm", "resource"},
     "ks3458a_unstick": {"confirm", "resource"},
+    # 前板交接三件套（2026-10-08，治"脚本测完面板停在 MRNG+冻结读数"）
+    "ks3458a_snapshot": {"resource"},
+    "ks3458a_restore": {"snap", "arange_on", "resource"},
+    "ks3458a_release": {"resource"},
 }
 
 fails: list[str] = []
