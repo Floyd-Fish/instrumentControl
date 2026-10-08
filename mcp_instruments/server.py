@@ -26,6 +26,7 @@ import asyncio
 import atexit
 import concurrent.futures
 import contextlib
+import contextvars
 import functools
 import inspect
 import os
@@ -259,6 +260,41 @@ class ToolDiagnosis(Exception):
         self.details = details or {}
 
 
+def _risk_of_tool(tool_name: str) -> str | None:
+    """查 registry 里该操作的风险等级；查不到（未注册/通用工具）返回 None。"""
+    try:
+        from instrument_runtime import get_registry
+        op = get_registry().get(tool_name)
+        return op.safety.risk if op else None
+    except Exception:            # noqa: BLE001  registry 未初始化等——不挡设备操作
+        return None
+
+
+def _audit_entry_tool(tool_name: str) -> str | None:
+    """该操作是否需要 `_call` 层审计：**非 read_only 的注册操作**才记。
+
+    - read_only（31 个）不记——高频查询刷屏无信息量；
+    - config/output/destructive（37 个）一律记——正是 2026-10-08 缺口里
+      "改了设备状态却无痕"的那批（sdg.counter(on=...)、psu_output、sds_shutdown…）；
+    - instr_query/instr_write 自带更详细的逐命令审计（含拒绝原因与回读），
+      不在此重复记。
+    """
+    try:
+        from instrument_runtime import get_registry
+        op = get_registry().get(tool_name)
+        if op is None or tool_name in ("instr_query", "instr_write"):
+            return None
+        return tool_name if op.safety.risk != "read_only" else None
+    except Exception:            # noqa: BLE001
+        return None
+
+
+#: 当前正在执行的设备工具名（contextvars：随 async 上下文传播，worker 线程里取到）。
+#: 由 `device_tool.wrapper` / `_run_operation_by_name` 设置；`_call` 读取它做审计路由。
+_CURRENT_TOOL: "contextvars.ContextVar[str | None]" = contextvars.ContextVar(
+    "instrument_current_tool", default=None)
+
+
 def _call(model_name, connect_fn, fn, close_fn=None, resource=None,
           lock_wait_s=None):
     """**同步执行体**：持锁 → 连接 → 操作 → 关闭，错误分类。
@@ -269,6 +305,14 @@ def _call(model_name, connect_fn, fn, close_fn=None, resource=None,
     设备锁：单 worker 下正常情况下没有竞争者，此处 `acquire(timeout)` 只作
     第二道防线（防止将来有代码绕过 executor 直接碰 VISA）——真要等满 timeout，
     恰恰说明有这个 bug 或异常路径长期占锁，是有价值的告警信号。
+
+    审计（2026-10-08 补，治"设备专用工具绕开审计"的覆盖缺口）：当前工具名从
+    `_CURRENT_TOOL`（contextvars）取——legacy 的 `device_tool.wrapper` 与 compact 的
+    `_run_operation_by_name` 两条路径都设置它。按 registry 风险分类过滤：
+    **read_only 不记**（刷屏无信息量），**config/output/destructive 一律记**
+    （含失败）。此前审计只挂在 instr_query/instr_write 两个通用入口上，
+    `instr_call → sdg.counter(on=True)` 这类库方法路径完全无痕（2026-10-08
+    弱模型实测抓到：FCNT STATE,ON 零落盘）。
     """
     wait = _LOCK_WAIT_S if lock_wait_s is None else lock_wait_s
     if not _DEVICE_LOCK.acquire(timeout=max(0.0, wait)):
@@ -276,6 +320,9 @@ def _call(model_name, connect_fn, fn, close_fn=None, resource=None,
                     f"设备锁被占用超过 {wait:.0f}s（有路径绕过统一执行器，或异常"
                     "路径长期占锁）；本次未向任何设备下发命令。重启 MCP 服务可恢复。",
                     model_name, _out_res(model_name, resource))
+    tool_name = _CURRENT_TOOL.get()
+    audited_tool = _audit_entry_tool(tool_name) if tool_name else None
+    t_start = time.time()
     try:
         try:
             dev = connect_fn()
@@ -310,19 +357,34 @@ def _call(model_name, connect_fn, fn, close_fn=None, resource=None,
             except Exception:
                 return payload
 
+        def audited(payload: str) -> str:
+            """非 read_only 操作落审计（成功/失败都记），再挂会话告警。"""
+            if audited_tool:
+                try:
+                    ok_flag = '"ok": true' in payload or '"ok":true' in payload
+                    _audit_mod.audit_scpi(
+                        audited_tool,
+                        res or _out_res(model_name) or model_name,
+                        cmd=f"<library call> {audited_tool}",
+                        risk=_risk_of_tool(audited_tool),
+                        ok=ok_flag, seconds=round(time.time() - t_start, 2))
+                except Exception:            # 审计失败绝不影响设备操作
+                    pass
+            return finish(payload)
+
         try:
-            return finish(_ok(model_name, fn(dev), res))
+            return audited(_ok(model_name, fn(dev), res))
         except ToolDiagnosis as e:
             # 诊断字段与错误一起返回：调用方一眼看到"为什么没读数 + 该改什么"
             d = json.loads(_err(e.error_type, str(e), model_name, res))
             d.update(e.details)
-            return finish(json.dumps(d, ensure_ascii=False, default=str))
+            return audited(json.dumps(d, ensure_ascii=False, default=str))
         except ValueError as e:
-            return finish(_err("param_validation", str(e), model_name, res))
+            return audited(_err("param_validation", str(e), model_name, res))
         except RuntimeError as e:
-            return finish(_err("device_error", str(e), model_name, res))
+            return audited(_err("device_error", str(e), model_name, res))
         except Exception as e:
-            return finish(_err("communication", f"{type(e).__name__}: {e}", model_name, res))
+            return audited(_err("communication", f"{type(e).__name__}: {e}", model_name, res))
         finally:
             try:
                 if close_fn is not None:
@@ -426,11 +488,16 @@ class _DeviceExecutor:
                          name="visa-worker").start()
 
     def _worker(self) -> None:
-        """唯一执行设备 I/O 的线程：取一个任务 → 跑 → 把结果/异常交回事件循环。"""
+        """唯一执行设备 I/O 的线程：取一个任务 → 跑 → 把结果/异常交回事件循环。
+
+        任务四元组里的 `ctx` 是投递方（事件循环线程）的 contextvars 快照——
+        裸线程不继承 contextvars（2026-10-08 实测：新线程 `CV.get()` 得 None），
+        所以 `_CURRENT_TOOL`（审计路由用）必须在投递方 `copy_context()` 显式带过来。
+        """
         while True:
-            fn, done, loop = self._jobs.get()
+            fn, done, loop, ctx = self._jobs.get()
             try:
-                result = fn()
+                result = ctx.run(fn)
             except BaseException as e:              # noqa: BLE001
                 self._finish_on_loop(loop, done, e, ok=False)
             else:
@@ -489,7 +556,9 @@ class _DeviceExecutor:
         loop = asyncio.get_running_loop()
         done: "asyncio.Future" = loop.create_future()
         try:
-            self._jobs.put((fn, done, loop))
+            # contextvars 快照随任务走：worker 线程不继承 context（见 _worker 注释），
+            # `_CURRENT_TOOL`（审计路由）靠它传到 `_call`。
+            self._jobs.put((fn, done, loop, contextvars.copy_context()))
         except BaseException:
             self._busy = False
             raise
@@ -529,9 +598,13 @@ def device_tool(budget_s=None):
         @functools.wraps(fn)
         async def wrapper(*args, **kwargs):
             _fix_stdout_once()
-            return await _executor().run(functools.partial(fn, *args, **kwargs),
-                                         budget_s, label=fn.__name__,
-                                         args=args, kwargs=kwargs)
+            token = _CURRENT_TOOL.set(fn.__name__)
+            try:
+                return await _executor().run(functools.partial(fn, *args, **kwargs),
+                                             budget_s, label=fn.__name__,
+                                             args=args, kwargs=kwargs)
+            finally:
+                _CURRENT_TOOL.reset(token)
         _preserve_signature(wrapper, fn)   # 保工具的入参 schema 不变
         if _PROFILE == "legacy":
             mcp.tool()(wrapper)
@@ -608,8 +681,12 @@ async def _run_operation_by_name(tool_name: str, args: dict) -> str:
 
     op = get_registry().require(tool_name)
     _fix_stdout_once()
-    return await _executor().run(functools.partial(op.fn, **args), op.budget,
-                                 label=op.tool_name, args=(), kwargs=args)
+    token = _CURRENT_TOOL.set(op.tool_name)
+    try:
+        return await _executor().run(functools.partial(op.fn, **args), op.budget,
+                                     label=op.tool_name, args=(), kwargs=args)
+    finally:
+        _CURRENT_TOOL.reset(token)
 
 
 def _invoke_operation(tool_name: str, args: dict) -> str:

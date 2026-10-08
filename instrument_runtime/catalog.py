@@ -85,7 +85,10 @@ RISK_BY_TOOL: dict[str, str] = {
     "sds_shutdown": _DESTRUCTIVE,    # 远程关机，需面板手动开机
     # ---- SDG 信号源（4）----
     "sdg_status": _READ_ONLY,
-    "sdg_counter": _READ_ONLY,
+    # on=True/False 会写 FCNT STATE（改频率计开关）——2026-10-08 审计下沉时发现
+    # 原标 read_only 是分类错误（弱模型实测：instr_call sdg.counter(on=True) 改了
+    # 设备状态却无审计行）。on=None 纯查询占多数场景，但风险分类按**最坏入参**定。
+    "sdg_counter": _CONFIG,
     "sdg_set_wave": _CONFIG,
     "sdg_output": _OUTPUT,
     # ---- Keysight 3446x 万用表（4）----

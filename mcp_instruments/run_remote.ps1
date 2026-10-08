@@ -182,35 +182,68 @@ function Start-Server {
     $errLog = Join-Path $LogDir "mcp_server_$ts.err.log"
 
     Write-Host "starting MCP server on $base (pid file: $PidFile)"
-    $env:PYTHONUTF8 = '1'
-    $proc = Start-Process -FilePath $exe `
-        -ArgumentList @($ServerPy) `
-        -WorkingDirectory $ScriptDir `
-        -WindowStyle Hidden -PassThru `
-        -RedirectStandardOutput $outLog -RedirectStandardError $errLog `
-        -Environment @{
-            MCP_TRANSPORT      = 'streamable-http'
-            MCP_HTTP_HOST      = '127.0.0.1'
-            MCP_HTTP_PORT      = "$P"
-            PYTHONUTF8         = '1'
-            PYTHONUNBUFFERED   = '1'
+    # profile 显式钉死：不钉的话会继承调用方 shell 的 INSTRUMENT_MCP_PROFILE
+    # （2026-10-08 实测踩坑：本机调试时 shell 里残留 legacy，服务就被起了 legacy，
+    #  客户端 instr_call 全部 Unknown tool）。默认 compact；要改用参数显式传。
+    $prof = if ($env:INSTRUMENT_MCP_PROFILE_EXPLICIT) { $env:INSTRUMENT_MCP_PROFILE_EXPLICIT } else { 'compact' }
+
+    # 启动方式（2026-10-08 定型）：**python 全脱离启动器**（同目录 spawn_detached.py，
+    # DETACHED_PROCESS|NEW_PROCESS_GROUP|BREAKAWAY_FROM_JOB，日志重定向由启动器完成）。
+    # 为什么不用 Start-Process -RedirectStandard* / cmd start /b：两者都让服务与
+    # 本脚本共享 console/句柄——服务永不退出 → 调用方 shell（opencode/WinRM）的
+    # 输出捕获等到超时（start 逻辑早完成，纯显示层卡死，实测 3 分钟+；期间还因
+    # 误判清理状态文件留下过 16 个僵尸服务）。DETACHED 从根上断开：脚本秒退。
+    $env:MCP_TRANSPORT      = 'streamable-http'
+    $env:MCP_HTTP_HOST      = '127.0.0.1'
+    $env:MCP_HTTP_PORT      = "$P"
+    $env:PYTHONUTF8         = '1'
+    $env:PYTHONUNBUFFERED   = '1'
+    $env:INSTRUMENT_MCP_PROFILE = $prof
+    try {
+        $launcherPid = & $exe (Join-Path $ScriptDir 'spawn_detached.py') `
+            $exe $ServerPy $outLog $errLog
+        if ($LASTEXITCODE -ne 0 -or -not $launcherPid) {
+            throw "detached launcher failed (exit=$LASTEXITCODE, pid='$launcherPid')"
         }
+        # launcher 返回的是服务 pid（它自己随即退出）
+        $serverPid = [int]$launcherPid
+    } finally {
+        Remove-Item Env:MCP_TRANSPORT, Env:MCP_HTTP_HOST, Env:MCP_HTTP_PORT, `
+                   Env:PYTHONUNBUFFERED, Env:INSTRUMENT_MCP_PROFILE -ErrorAction SilentlyContinue
+    }
 
     # 写状态文件（addr 先写，便于其它工具尽早发现"正在起"）
     if (-not (Test-Path -LiteralPath $RunDir)) { New-Item -ItemType Directory -Path $RunDir -Force | Out-Null }
     [IO.File]::WriteAllText($AddrFile, "127.0.0.1:$P", [Text.UTF8Encoding]::new($false))
-    [IO.File]::WriteAllText($PidFile, "$($proc.Id)", [Text.UTF8Encoding]::new($false))
+    [IO.File]::WriteAllText($PidFile, "$serverPid", [Text.UTF8Encoding]::new($false))
 
+    # 健康检查：独立短命探测进程（本脚本与服务的句柄已由 DETACHED 启动断开）
     $deadline = (Get-Date).AddSeconds($TimeoutSec)
     while ((Get-Date) -lt $deadline) {
         Start-Sleep -Milliseconds 700
-        if ($proc.HasExited) {
+        $exited = -not (Get-Process -Id $serverPid -ErrorAction SilentlyContinue)
+        if ($exited) {
             $tail = (Get-Content -LiteralPath $errLog -Tail 15 -ErrorAction SilentlyContinue) -join "`n"
             Remove-Item -LiteralPath $PidFile, $AddrFile -Force -ErrorAction SilentlyContinue
-            throw "server exited during startup (exit=$($proc.ExitCode)). stderr tail:`n$tail"
+            throw "server exited during startup. stderr tail:`n$tail"
         }
-        if (Test-McpHealth -Base $base) {
-            Write-Host "OK: MCP server up (pid=$($proc.Id), $base/mcp)"
+        $alive = & pwsh -NoProfile -Command {
+            param($b)
+            $body = '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"run_remote-healthcheck","version":"0"}}}'
+            $tmp = Join-Path $env:TEMP ('mcp-hc-' + [guid]::NewGuid().ToString('N') + '.json')
+            [IO.File]::WriteAllText($tmp, $body, [Text.UTF8Encoding]::new($false))
+            try {
+                $raw = & curl.exe -s --noproxy '*' --max-time 5 -X POST "$b/mcp" `
+                    -H 'Content-Type: application/json' `
+                    -H 'Accept: application/json, text/event-stream' `
+                    --data-binary "@$tmp" 2>$null
+                if ($LASTEXITCODE -eq 0 -and $raw -match '"serverInfo"') { 'UP' } else { '' }
+            } finally {
+                Remove-Item -LiteralPath $tmp -Force -ErrorAction SilentlyContinue
+            }
+        } -Args $base
+        if ($alive -eq 'UP') {
+            Write-Host "OK: MCP server up (pid=$serverPid, $base/mcp)"
             Write-Host "    logs: $outLog"
             return
         }
