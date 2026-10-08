@@ -144,9 +144,11 @@ python mcp_instruments/config_cli.py clear sds            # 删条目 → 回落
 
 ## 扩展新设备
 
-1. `instr_discover` 定位资源 → 2. `instr_query`（只读）跑通手册里的查询
-→ 3. `instr_write(confirm=True, readback_cmd=...)` 验证写命令 → 4. 命令有了出处后
-再落库（`commands.py` 常量 + 库方法 + 可选 MCP 工具），最后跑命令审计器防回归。
+完整流程见 skill `instrument-mcp` →「新仪器渐进式接入流程」（五步：发现 →
+只读跑通 → 写验证 → 落库+分类 → 防回归）。概要：`instr_devices(full=true)` 定位
+资源 → `instr_query`（只读）跑通手册查询 → `instr_write(confirm=True, readback_cmd=...)`
+验证写命令 → 命令有了出处后落库（`commands.py` 常量 + 库方法 + 可选 MCP 工具 +
+**catalog 风险分类**——未分类服务起不来）→ 跑命令审计器与离线回归。
 
 ## 文档导航
 

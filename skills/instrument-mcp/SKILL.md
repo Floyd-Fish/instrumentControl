@@ -385,6 +385,45 @@ MRNG = manual range 指示符（手册：不在自动挡时点亮），不是故
 设备无响应有硬超时看门狗（≥30s），离线资源不会冻结 MCP；
 串口(ASRL)按 9600 波特。
 
+### 新仪器渐进式接入流程（compact 面口径，五步）
+
+**目标**：新设备从"发现"到"落库成专用工具"，每步都有护栏、每步留痕——不跳步、
+不猜命令（铁律 1：语法必须对照设备手册）。
+
+```
+第 1 步 发现资源
+  instr_devices(full=true)        # 全量扫描（贵：本机实测 355.9s，会占住执行器）
+  # 常见捷径：instr_devices()（瞬时，读缓存/配置）先看已知地址；只有新设备才 full=true
+  # 串口设备（ASRL 编号漂移最频繁）一律先发现再操作
+  → 拿到 VISA 资源串（如 TCPIP0::192.168.31.x::inst0::INSTR）
+
+第 2 步 身份确认 + 只读跑通（零代码，用通用工具）
+  instr_query(resource, "*IDN?")           # 身份——确认没连到别的设备
+  instr_query(resource, "<手册里的查询>")   # 逐条跑通手册命令，确认语法
+  # 3458A 例外：不是 SCPI 表（ID?/ERRSTR?），禁用这两条通用工具
+
+第 3 步 写命令验证（有护栏）
+  instr_write(resource, cmd, readback_cmd=..., confirm=True)
+  # 写前自动 drain 错误队列、写后逐条查 SYST:ERR?、回读比对——三步齐
+  # 拒绝/执行都落盘 TEST_DATA/common/mcp_scpi_audit_*.jsonl
+
+第 4 步 落库（命令有了出处之后）
+  a. <device>_control/commands.py   # 命令常量 + 手册页码出处（零猜测的自证）
+  b. <device>_control/<device>.py   # 库方法（连接→操作→关闭；写后回读带容差）
+  c. mcp_instruments/server.py      # 可选：@device_tool() 暴露 MCP 工具
+  d. instrument_runtime/catalog.py  # ⚠ 必须登记风险分类——未分类的服务起不来
+  e. skills 的速查表 + 决策树      # 工具行为与坑写进 skill（agent 才会正确用）
+
+第 5 步 防回归
+  python TEST_SCRIPTS/common/audit_all_commands.py        # 命令审计（出处核对）
+  python TEST_SCRIPTS/common/regression_offline.ps1       # 全套离线回归
+```
+
+**渐进式的含义**：第 1-3 步**零代码**（通用工具即可操作新设备），第 4 步才写代码——
+只有被证明正确的命令才进库。跳步的代价：猜语法 → 设备静默不应答 → 超时白等；
+猜分类 → 服务起不来（宁可拒绝启动，见 `_register_runtime_operation` 的纪律）。
+
+
 ## 二、参数语义速查
 
 | 工具 | 参数 | 语义 |
@@ -549,6 +588,32 @@ MCP 进程通常已带管理员（可直接用）；若工具报"需要管理员
 （重连或换协议 inst0 ↔ raw socket）。
 
 ## 五、错误处理
+
+### 读数/回读解读纪律（跨设备通用，AGENTS.md 铁律的速查版）
+
+- **回读比对用容差，禁止 `==`**：仪器会舍入参数（实测 `12.1` 设进去回读 `12.099998`）。
+  拿回读值做断言/比较一律带容差（相对 1e-3 量级起步）。
+- **耦合参数同一消息连续发**：SCPI 里分开发的耦合设置会产生非预期中间态。
+  走库工具（`sdg_set_wave` 等）已内部处理；**自己拼 `instr_write` 时必须注意**
+  （如 SDS 的 scale+offset——改 scale 会等比缩放 offset，顺序错了值就错）。
+- **自定义写序列前先 drain 错误队列**：`SYST:ERR?` 是 FIFO，上次会话残留的滞后
+  错误会污染逐命令查错（写前 drain、写后逐条查——`instr_write` 已自动做）。
+- **USB 设备一律走 VISA**：不要 pyusb/libusb 直连（Windows 无驱动时报
+  NotImplementedError）；卡死恢复顺序见下方「USB-TMC 卡死」。
+- **响应形态三种坑**：① 查询回**短格式**（设 `CHANnel1` 回 `CHAN1`）——解析要兼容；
+  ② 布尔查询回 **0/1** 不是 ON/OFF；③ 带单位/回显头（SDS `C1:VDIV 5.00E+00V`、
+  `2.00E-03S`）——剥干净再转数值。
+
+### 设备特有坑（速查表之外的补充）
+
+- **SDS**：`MEASure:MODE` 默认 ADVANCED——SIMPLE 组测量整体失效（`VALue?` 报
+  "number of measurements is zero"）要先切 `MODE SIMPle`（`sds_measure` 工具已内置）；
+  命令只吃**短形式**（`ACQ:MDEP?` 通、`:ACQuire:MDEPth?` 超时）。
+- **RIGOL 示波器（DHO/MHO 共享内核 rigol_scope）**：系列差异一律走
+  `rigol_scope/families.py` 的 Family 表（清测量 DHO `:MEASure:CLEar` vs MHO
+  `:MEASure:DELete`；采集第四态 DHO `ULTRa` vs MHO `HRESolution`；边沿第三态
+  **两系列都是 `RFALl`**）。**`*OPT?` 两系列都不要用**（MHO 实测查询超时）；
+  MHO 的 ASCII 波形**不带 TMC 头**（二进制才带）。
 
 统一返回 `{ok, error_type, error}`：
 - `confirm_required`：补 confirm=True 重试
