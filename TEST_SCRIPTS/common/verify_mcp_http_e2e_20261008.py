@@ -23,6 +23,13 @@ from mcp.client.streamable_http import streamablehttp_client   # noqa: E402
 URL = "http://127.0.0.1:8765/mcp"
 PID_FILE = r"D:\MyProjects\AI\instrumentControl\mcp_instruments\run\mcp_server.pid"
 
+# v2dev 合并后（1b92cf8）默认 profile=compact（5 工具；68 操作都在 registry）。
+# legacy=68。断言随环境变量 INSTRUMENT_MCP_PROFILE 或服务端默认自动适配。
+def _expected_tools() -> int:
+    import os
+    prof = (os.environ.get("INSTRUMENT_MCP_PROFILE") or "compact").strip().lower()
+    return 68 if prof == "legacy" else 5
+
 
 class PMC(ctypes.Structure):
     _fields_ = [
@@ -66,7 +73,9 @@ async def main() -> None:
             out["tools_count"] = len(tools.tools)
 
     out["verdict_1_handshake"] = out["serverInfo"]["name"] == "instruments"
-    out["verdict_2_tools_68"] = out["tools_count"] == 68
+    _exp = _expected_tools()
+    out["expected_tools"] = _exp
+    out["verdict_2_tools_count"] = out["tools_count"] == _exp
     out["verdict_4_mem_lt_100mb"] = (out.get("private_commit_mb") or 1e9) < 100
 
     print(json.dumps(out, ensure_ascii=False, indent=2))
@@ -76,7 +85,7 @@ async def main() -> None:
     with open(dest, "w", encoding="utf-8") as f:
         json.dump(out, f, ensure_ascii=False, indent=2)
     print("saved:", dest)
-    if not all((out["verdict_1_handshake"], out["verdict_2_tools_68"], out["verdict_4_mem_lt_100mb"])):
+    if not all((out["verdict_1_handshake"], out["verdict_2_tools_count"], out["verdict_4_mem_lt_100mb"])):
         sys.exit(1)
 
 
