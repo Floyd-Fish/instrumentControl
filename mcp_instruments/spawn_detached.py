@@ -14,6 +14,7 @@
     宿主立即拿到返回，服务独立存活（计划任务同款拓扑）。
 """
 import os
+import subprocess
 import sys
 
 DETACHED_PROCESS = 0x00000008
@@ -28,23 +29,31 @@ def main() -> int:
         return 2
     exe, srv, out_log, err_log = sys.argv[1:5]
 
-    import subprocess
     out_f = open(out_log, "ab", buffering=0)
     err_f = open(err_log, "ab", buffering=0)
-    try:
-        proc = subprocess.Popen(
-            [exe, srv],
-            stdin=subprocess.DEVNULL, stdout=out_f, stderr=err_f,
-            creationflags=(DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP
-                           | CREATE_BREAKAWAY_FROM_JOB),
-            close_fds=True,
-        )
-        pid = proc.pid
-        # 不 wait、不持有管道——句柄随本进程退出关闭（子进程已复制自己的副本）
-    finally:
+    # BREAKAWAY 需要 Job 对象允许逃离（WinRM/计划任务会话常无此权限，2026-10-09
+    # 远程机实测 WinError 5 拒绝访问）——先带它试，被拒则降级到 DETACHED 两标志
+    # （脱离 console/句柄已足够；BREAKAWAY 只在"父 Job 终止会连带杀子"的宿主里有意义）。
+    for flags in (DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP | CREATE_BREAKAWAY_FROM_JOB,
+                  DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP):
+        try:
+            proc = subprocess.Popen(
+                [exe, srv],
+                stdin=subprocess.DEVNULL, stdout=out_f, stderr=err_f,
+                creationflags=flags,
+                close_fds=True,
+            )
+            break
+        except PermissionError:
+            continue
+    else:
+        print("spawn failed: PermissionError for all flag combinations", file=sys.stderr)
         out_f.close()
         err_f.close()
-    print(pid)          # 唯一输出：服务 pid（pwsh 侧捕获）
+        return 1
+    print(proc.pid)          # 唯一输出：服务 pid（pwsh 侧捕获）
+    out_f.close()
+    err_f.close()
     return 0
 
 
