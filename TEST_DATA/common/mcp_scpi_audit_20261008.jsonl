@@ -1,0 +1,2 @@
+{"ts": "2026-10-08T21:15:23", "tool": "instr_write", "resource": "TCPIP0::192.168.31.206::inst0::INSTR", "cmd": "FCNT?", "refused": null, "readback_cmd": null}
+{"ts": "2026-10-08T21:15:23", "tool": "instr_write", "resource": "TCPIP0::192.168.31.206::inst0::INSTR", "cmd": "FCNT?", "executed": true, "outcome": {"ok": true, "model": "instruments", "result": {"written": "FCNT?", "pre_errors": null, "syst_errors": [], "readback": null, "readback_fields": null}, "resource": "TCPIP0::192.168.31.206::inst0::INSTR"}}
