@@ -24,6 +24,15 @@
 > （20 s 超时），必须先 `TRIG AUTO`。参考实现的 `reset()` 里 `RESET` 恰好把它复位成 AUTO，
 > 所以此前未暴露。本库用 `prepare_for_read()` 显式补上，**不发 RESET**。
 > 现场还实测到一次"上次会话把表留在 free-run"（持续吐读数）——已按 `recover()` 处理。
+>
+> **⚠ RESET 不复位 TARM（2026-10-08 真机实测，修正上文的推断）**：复位前后
+> `TARM?` 均 = `4(HOLD)`——RESET 并**没有**把触发臂回上电值 `TARM AUTO`。手册
+> （UserGuide p.226-227）声称 RESET 回到 power-on state，但其列出的具体动作不含
+> TARM/TRIG（txt 提取版在"executes these commands"处清单被截断，无法从手册正面
+> 确认；上电值表 Table 5 p.25-26 是 `TARM AUTO`/`TRIG AUTO`）。**面板恢复刷新
+> 必须显式 `TARM AUTO`**——`release_to_front_panel()` / `ks3458a_release` /
+> `ks3458a_restore` 已内置。上文"参考实现的 reset() 恰好复位成 AUTO"针对的是
+> **TRIG**（保留，未单独复测）；**TARM 的对应推断不成立，以本条实测为准**。
 
 本文件是 `keysight_3458a` 的**命令白名单登记簿**。`commands.py` 只允许出现下表里的命令；
 新增命令必须先在**本文件**登记并写明出处（AGENTS.md 铁律 1「命令禁止猜测」）。
@@ -51,7 +60,7 @@
 | `ID?` | — | 身份（3458A **没有** `*IDN?`；返回形如 `HP3458A`） | `[SICL]` L392-394、`[VISA]` L639-640 | `DMM3458A.idn()` | 已实现（真机跑过） |
 | `ERRSTR?` | — | 读错误队列（**没有** `SYST:ERR?`）；形态 `<code>,"<message>"` | `[SAMPLE]` L39 | `DMM3458A.error_string()` / `is_error_clear()` | 已实现；**队列语义未核对** |
 | `TEMP?` | — | 3458A **内部温度**读数 | `[TOOLS]` `tc_attrib_temp.py:96`、`tc_temp_sweep.py:135` | `DMM3458A.temperature()` | 已实现（参考项目真机跑过；**单位/精度待手册核对**） |
-| `RESET` | — | 复位到开机测量配置（**不是** `*RST`） | `[SICL]` L320、`[VISA]` L569、`[SAMPLE]` L35 | `DMM3458A.reset()` | 已实现；**影响范围未核对** |
+| `RESET` | — | 复位到开机测量配置（**不是** `*RST`）。⚠ 2026-10-08 实测：**不复位 TARM**（复位前后 TARM?=4 HOLD）；面板恢复需显式 `TARM AUTO`（见文件头注记与手册 p.226-227 核对） | `[SICL]` L320、`[VISA]` L569、`[SAMPLE]` L35 | `DMM3458A.reset()` | 已实现；影响范围：读数中止/错误与状态寄存器/读数内存已核对（p.226-227），TARM 实测不复位；其余按手册 |
 | `END ALWAYS` | — | 每次读数都置 EOI | `[SICL]` L325、`[VISA]` L571 | `reset()` 内 | 已实现 |
 | `INBUF ON` | — | 打开输入缓冲（`TARM SGL` 配方的**前置条件**，否则占住 GPIB 总线） | `[SICL]` L326、`[VISA]` L575 | `reset()` 内 | 已实现 |
 | `TARM HOLD` | — | 停止后续触发（free-run 的第一道闸） | `[SICL]` L318 | `recover()` / `reset()` / `close()` | 已实现 |

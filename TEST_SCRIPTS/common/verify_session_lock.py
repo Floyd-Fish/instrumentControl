@@ -104,7 +104,14 @@ info = sl.touch(RES, kind="MHO")
 check("死进程锁已清理且不告警", not dead.exists() and not info["warnings"], f"exists={dead.exists()}")
 
 print("\n§6 异常降级：锁失败绝不影响工具", flush=True)
-sl._locks_dir = lambda: Path("Z:/definitely/not/writable")     # type: ignore[assignment]
+# 制造"保证不可写"的目录：先建一个**同名文件**，再让锁目录指到它的子路径——
+# 对文件做 mkdir 必然失败（FileExistsError/NotADirectoryError），跨盘符无关。
+# （2026-10-09 修：原实现指向 Z:/definitely/not/writable，赌"Z: 盘不存在"——
+#  本机恰有 Z: 且可写 → mkdir 成功 → 降级分支根本没被走到 → 恒 FAIL；
+#  见 AGENTS.md 待办与 verify_session_lock 的既有问题记录。）
+_blocker = tmp / "not_a_dir"                      # tmp 来自前文 tempfile.mkdtemp
+_blocker.write_text("occupied by a file, not a dir", encoding="utf-8")
+sl._locks_dir = lambda: _blocker / "child"        # type: ignore[assignment]
 info = sl.touch(RES, kind="MHO")
 check("目录不可写 → 返回空告警 + error 字段（不抛异常）",
       info["warnings"] == [] and "error" in info, str(info.get("error"))[:60])
