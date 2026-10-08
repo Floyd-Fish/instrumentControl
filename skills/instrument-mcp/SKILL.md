@@ -63,6 +63,48 @@ instr_call(op="sds.measure", args={"item": "PKPK", "ch": 1})
 
 本文是 AI 选择工具/参数时的决策依据。
 
+## 零.五、场景路由：走 MCP 工具，还是写脚本直连库？
+
+本项目**两种入口并存**，能力同源（最终都进 `*_control` 设备库 + broker 护栏）。
+**按场景选，不按偏好选**：
+
+| 场景 | 用什么 | 理由 |
+|---|---|---|
+| 临时看一眼（读个测量值/查个状态/截个图）| **MCP 工具**（compact 的 `instr_call` 或 legacy 具名工具）| 一次往返，无需起进程/写文件 |
+| 复杂流程（扫频 / 批采 / 参数矩阵 / 循环条件判断）| **写脚本**（`TEST_SCRIPTS/` 里，import 设备库直连）| 模型侧循环=多倍往返且易断；脚本是原子执行+自动留痕 |
+| 正式测试 / 回归 / 要留证据链的实验 | **写脚本**（套用 `verify_*.py` 范式）| 产物落 `TEST_DATA/`、带时间戳、可重跑 |
+| 一次性组合操作但不想写文件 | MCP 的 `instr_batch`（声明式 plan）| 整批一个执行单元，步间不被插入 |
+| 设备排障 / 需要看原始 SCPI 响应 | 脚本 + `common.visa_client`（或 MCP `instr_query`）| 需要逐条控制命令与响应形态 |
+
+**脚本直连的标准头**（护栏不降级的关键——黑名单/查询判据与 MCP 同一份代码）：
+
+```python
+import sys
+sys.path.insert(0, r"D:\MyProjects\AI\instrumentControl")   # 或相对定位
+from instrument_runtime import broker          # decide_scpi / drain_errors / audit_scpi
+from sds_control import find_sds               # 各设备库，地址走解析层（不写死 IP）
+
+dev = find_sds()
+try:
+    d = broker.decide_scpi("C1:VDIV?")          # 纯查询 → 放行；写/复位/锁定 → 拒
+    print(dev.query(d.normalized))
+finally:
+    dev.close()
+```
+
+要点：
+- **写 SCPI 前必须过 `broker.decide_scpi()`**——它与 MCP 工具走同一黑名单（复位/远程锁
+  一律拒，纯查询放行）。绕过它 = 绕过安全门。
+- **地址一律走解析层**（`resolve()`/`find_*()`），禁止在脚本里写死 IP（换网段即失效，
+  还可能把命令发给别的设备）。
+- **并发纪律同样适用**：脚本与 MCP 单例是两个进程，可同时摸同一台仪器——跨进程不互斥，
+  会话锁只给 `warnings` 告警。开跑前确认没有别的客户端在用（见「串行化的边界」）。
+- **内存**：`import common` 会自动设 `OPENBLAS_NUM_THREADS=1`（2026-10-08 起）——
+  脚本进程也只需 ~50 MB，跑完即释放，无常驻成本。
+
+MCP 侧（单例 `127.0.0.1:8765/mcp`）与脚本侧**可以并行使用不同设备**；同一台设备则遵守
+上面的并发纪律。
+
 ## 一、工具选择决策树
 
 ```

@@ -9,6 +9,14 @@
     res = resolve("sds")   # 地址解析：显式 > env > 配置 > 上次成功缓存 > 自动发现
                            # （不写死 IP：地址随 DHCP/换网段/换口变化）
 """
+import os as _os
+
+# 运行环境预置：必须在任何会拉起 numpy 的三方库（pyvisa 的 util.py 模块级 import numpy）
+# **之前**执行——本模块是所有设备库的第一个 import，放这里能让**脚本直连模式**与
+# MCP 模式同样受益（2026-10-08 实测：import pyvisa 私有提交 754.8 MB → 15.5 MB；
+# 根因是 32 线程 CPU 上 OpenBLAS 线程池 ~23 MB/线程。setdefault 允许启动方覆盖）。
+_os.environ.setdefault("OPENBLAS_NUM_THREADS", "1")
+
 from .discovery import (
     LAN_PROTOCOLS,
     FindResult,
