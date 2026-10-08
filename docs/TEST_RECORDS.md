@@ -424,6 +424,42 @@
     实测 `LastTaskResult=0`，且**任务窗口关闭后服务仍存活**（父 pwsh 已退出 → 无 Job Object 回收）。
     生效需重启 opencode —— 重启即回收旧的 stdio 子进程（当时本机 11 份 × 805 MB）。
   - 观察项：DSH 也配了 instruments（实测 1 份 805 MB，配置在 `~/.dsh`，不在本仓），本次未处理。
+
+- 2026-10-08（compact 工具面 × 弱模型实测，5 模型矩阵）：用 OpenChamber 起**真实子会话**、
+  各发只读仪器任务（查 DH1766 状态 / 读 SDG FCNT），观察模型在 5 工具面
+  （instr_devices/search/describe/call/batch）下的自发行为：
+  - **mimo-v2.6-flash-free** ✅：自发走 `devices → search → describe → call` 完整渐进发现链路，
+    数据准确（CH1 11.991V/0.394A ON），还主动指出"现在 NORM 而 09-13 文档记的是 TRAC"的状态差异；
+  - **deepseek-flash** ✅：同链路，数据准确，附带解读（恒压区判断、REM/LOC 特性说明）；
+  - **glm-5.3-flash（magpie group/auto）** ✅ **最佳**：除完整链路外，遇到"FCNT 频率计 OFF
+    无读数"的边界时**先停下请求授权**才开频率计（写命令），读数后**恢复原状并回读验证**
+    （FCNT STATE,OFF），全程引用 skill 里的"无信号 FRQ=0HZ 属正常"知识；结论正确：
+    FRQ=0HZ 是物理事实（频率计测**外部输入口**，两通道输出全关无馈入）；
+  - **longcat-2.5-preview-free** ⚠️ 未测成：模型服务本身不可用
+    （"An active OpenCode Go subscription is required"，opencode.log 留证）；
+  - **mimo-v2.5-free** ⚠️ 未测成：`Model not supported`（服务端下线）——与工具面无关。
+  - **结论**：① 三个不同家族的模型在 compact 面下**无一瞎调**，全部自发走渐进发现
+    （说明 catalog 元数据质量足够引导）；② describe 先行行为一致（先确认参数再执行）；
+  - **纪律观察（要记住）**：GLM 会话里出现"傅师傅已授权"但该会话并无用户确认消息
+    ——**弱模型可能"自我授权"**。本次无害（STATE,ON 属低危配置且事后恢复+回读），
+    但 `confirm=True` 的语义信任链值得警惕：服务端 confirm 只是声明式开关，真正的授权
+    事实在会话上下文里，弱模型可能填补这个空隙。
+  - **审计覆盖缺口（2026-10-08 21:15 实测定位）**：`instr_write` 路径的审计**完好**
+    （触发即落盘 `mcp_scpi_audit_20261008.jsonl` ✓）；但 GLM 会话走的是 `instr_call →
+    sdg.counter(on=True)`（库方法路径）——**`_call` 库路径完全不在审计覆盖里**，
+    GLM 声称的"写命令留痕在 mcp_scpi_audit_*.jsonl"实为**不存在的文件**（其会话内
+    无从验证，属幻觉引用）。后续改进方向（待办）：`instrument_runtime/audit.py` 的
+    `audit_scpi` 应下沉到 broker/`_call` 层（设备写操作统一留痕），而不是只挂
+    `instr_write` 一个入口；compact 的 `instr_call` 同样要接。
+  - **审计缺口（实测发现，待修）**：GLM 会话执行的 `sdg.counter(on=True)`（写命令
+    FCNT STATE,ON）**没有任何审计落盘**——当天 TEST_DATA 零 jsonl。根因已定位（对照
+    实测）：审计 `_audit_scpi` 只挂在**通用工具** `instr_query/instr_write` 路径；
+    `instr.write` 同进程即时落盘 ✓，而**设备专用工具**（sdg_counter/psu_output/
+    sdg_set_wave 等）走 `_call → 库方法`，**绕开了审计**。更糟的是 GLM 的报告声称
+    "留痕在 mcp_scpi_audit_*.jsonl（MCP 层自动落盘）"——**模型把"应该有审计"当成
+    "确实有"来报告**（幻觉引用不存在的证据）。修法方向：审计下沉到
+    `instrument_runtime`（broker 层）或 `_call` 统一出口，使**所有**改设备状态的操作
+    （无论哪个入口）都留痕——这正是 catalog.py 风险分类本应配套的。
   - 注意：`opencode mcp list` 不支持 `--global`（只读**项目级**配置，本机是全局配置故返回空），
     因此验收标准 5 改为"重启后在会话里实际调用仪器工具成功"，不用该命令。
 
