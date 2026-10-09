@@ -15,8 +15,10 @@ import argparse
 import asyncio
 import json
 import sys
+from pathlib import Path
 
-sys.path.insert(0, r"D:\MyProjects\AI\instrumentControl")
+ROOT = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(ROOT))
 
 from mcp import ClientSession                                  # noqa: E402
 from mcp.client.streamable_http import streamablehttp_client   # noqa: E402

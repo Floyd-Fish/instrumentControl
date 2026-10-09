@@ -80,7 +80,10 @@ instr_call(op="sds.measure", args={"item": "PKPK", "ch": 1})
 
 ```python
 import sys
-sys.path.insert(0, r"D:\MyProjects\AI\instrumentControl")   # 或相对定位
+from pathlib import Path
+# 仓库根：按脚本所在深度相对定位，**勿写死本机绝对路径**（换机器/换 clone 目录即失效）
+ROOT = Path(__file__).resolve().parents[2]     # TEST_SCRIPTS/<设备>/xxx.py 的深度
+sys.path.insert(0, str(ROOT))
 from instrument_runtime import broker          # decide_scpi / drain_errors / audit_scpi
 from sds_control import find_sds               # 各设备库，地址走解析层（不写死 IP）
 
@@ -651,9 +654,9 @@ MCP 进程通常已带管理员（可直接用）；若工具报"需要管理员
 **自救命令（幂等，随时可跑，安全）**：
 
 ```powershell
-pwsh -NoProfile -File D:\MyProjects\AI\instrumentControl\mcp_instruments\run_remote.ps1 status
+pwsh -NoProfile -File <仓库根>\mcp_instruments\run_remote.ps1 status
 # running:false → 拉起；running:true → 服务没挂，去查别的原因
-pwsh -NoProfile -File D:\MyProjects\AI\instrumentControl\mcp_instruments\run_remote.ps1 start
+pwsh -NoProfile -File <仓库根>\mcp_instruments\run_remote.ps1 start
 ```
 
 `start` **幂等**（已在跑就 no-op），且用 **detached 进程**启动 —— 不依赖这个 shell 存活，

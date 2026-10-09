@@ -56,7 +56,7 @@ MCP 注册（示例，路径按需替换）：
 // DSH: ~/.dsh/cordis.patch.yml 的 insert 列表；zcode: ~/.zcode/cli/config.json
 { "serverName": "instruments", "transport": "stdio",
   "command": "C:/Users/<you>/AppData/Local/Programs/Python/Python311/python.exe",
-  "args": ["D:/MyProjects/AI/instrumentControl/mcp_instruments/server.py"] }
+  "args": ["<仓库根>/mcp_instruments/server.py"] }
 ```
 
 > Windows 下必须用 python **全路径**（WindowsApps 别名的 python 在部分客户端 spawn 时失败）。

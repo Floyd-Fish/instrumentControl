@@ -17,6 +17,9 @@ import os
 import sys
 import time
 from ctypes import wintypes
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parents[2]
 
 
 class PMC(ctypes.Structure):
@@ -79,7 +82,7 @@ except Exception as e:  # noqa: BLE001
 
 ts = time.strftime("%Y%m%d_%H%M%S")
 tag = "threads1" if env_threads == "1" else "unfixed"
-out_dir = r"D:\MyProjects\AI\instrumentControl\TEST_DATA\common"
+out_dir = str(ROOT / "TEST_DATA" / "common")
 os.makedirs(out_dir, exist_ok=True)
 out = os.path.join(out_dir, "mem_probe_pyvisa_%s_%s.json" % (tag, ts))
 with open(out, "w", encoding="utf-8") as f:

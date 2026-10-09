@@ -13,8 +13,9 @@ import tempfile
 import time
 from pathlib import Path
 
-sys.path.insert(0, r"D:\MyProjects\AI\instrumentControl")
-sys.path.insert(0, r"D:\MyProjects\AI\instrumentControl\mcp_instruments")
+ROOT = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(ROOT))
+sys.path.insert(0, str(ROOT / "mcp_instruments"))
 
 import contextvars
 

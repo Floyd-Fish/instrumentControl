@@ -11,7 +11,7 @@ import sys
 import types
 from pathlib import Path
 
-ROOT = Path(r"D:\MyProjects\AI\instrumentControl")
+ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT))
 
 from keysight_3458a import commands as C          # noqa: E402

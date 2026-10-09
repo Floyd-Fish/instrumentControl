@@ -21,8 +21,11 @@ import json
 import shutil
 import sys
 import time
+from pathlib import Path
 
-CONFIG = r"C:\Users\AlwaysTS\.config\opencode\opencode.json"
+ROOT = Path(__file__).resolve().parents[2]
+# opencode 全局配置：家目录随机器/用户名变，一律从 Path.home() 派生
+CONFIG = str(Path.home() / ".config" / "opencode" / "opencode.json")
 
 REMOTE = {
     "type": "remote",
@@ -33,8 +36,8 @@ REMOTE = {
 
 LOCAL = {
     "command": [
-        r"C:\Users\AlwaysTS\AppData\Local\Programs\Python\Python311\python.exe",
-        r"D:\MyProjects\AI\instrumentControl\mcp_instruments\server.py",
+        sys.executable,          # 当前解释器全路径（Windows 下客户端 spawn 需全路径）
+        str(ROOT / "mcp_instruments" / "server.py"),
     ],
     "enabled": True,
     "type": "local",

@@ -7,7 +7,7 @@ import json
 import sys
 from pathlib import Path
 
-ROOT = Path(r"D:\MyProjects\AI\instrumentControl")
+ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(ROOT / "dh1766_control" / "src"))
 sys.path.insert(0, str(ROOT / "mcp_instruments"))
